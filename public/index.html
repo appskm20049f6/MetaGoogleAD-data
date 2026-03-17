@@ -368,41 +368,10 @@
           <label for="fxRate">美金匯率 (USD -> TWD)</label>
           <input id="fxRate" type="number" min="0" step="0.01" value="32" />
         </div>
-
-        <div id="googleSourceWrap" hidden>
-          <label for="googleSource">Google 資料來源</label>
-          <select id="googleSource">
-            <option value="db" selected>資料庫 (CSV)</option>
-            <option value="api">Google API</option>
-          </select>
-        </div>
-
-        <div id="googleReportDateWrap" hidden>
-          <label for="googleReportDate">Google 報表日期</label>
-          <select id="googleReportDate">
-            <option value="">全部日期</option>
-          </select>
-        </div>
-
-        <div id="googleGameNameWrap" hidden>
-          <label for="googleGameName">遊戲名稱</label>
-          <select id="googleGameName">
-            <option value="">全部遊戲</option>
-          </select>
-        </div>
       </div>
 
       <div style="margin-top: 12px; max-width: 240px;">
         <button id="queryBtn">查詢數據</button>
-      </div>
-
-      <div id="googleImportPanel" style="margin-top: 10px;" hidden>
-        <label for="googleCsvFile">Google 報表匯入 (CSV/TSV)</label>
-        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-          <input id="googleCsvFile" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" style="max-width: 420px;" />
-          <button id="importGoogleCsvBtn" type="button" style="max-width: 200px;">匯入到資料庫</button>
-        </div>
-        <div class="hint">你每天下載一次報表後，在這裡上傳，Google 分頁與整合頁就能查到資料庫內容。</div>
       </div>
 
       <div id="status" class="status">準備查詢。</div>
@@ -440,6 +409,8 @@
             <tr>
               <th class="checkbox-cell"><input id="checkAll" type="checkbox" /></th>
               <th>名稱</th>
+              <th>日期</th>
+              <th>OS</th>
               <th>曝光次數</th>
               <th>點擊次數</th>
               <th>CTR</th>
@@ -518,15 +489,6 @@
     const untilEl = document.getElementById('until');
     const levelEl = document.getElementById('level');
     const fxRateEl = document.getElementById('fxRate');
-    const googleSourceWrapEl = document.getElementById('googleSourceWrap');
-    const googleSourceEl = document.getElementById('googleSource');
-    const googleReportDateWrapEl = document.getElementById('googleReportDateWrap');
-    const googleReportDateEl = document.getElementById('googleReportDate');
-    const googleGameNameWrapEl = document.getElementById('googleGameNameWrap');
-    const googleGameNameEl = document.getElementById('googleGameName');
-    const googleImportPanelEl = document.getElementById('googleImportPanel');
-    const googleCsvFileEl = document.getElementById('googleCsvFile');
-    const importGoogleCsvBtn = document.getElementById('importGoogleCsvBtn');
     const accountSelectEl = document.getElementById('accountSelect');
     const accountSelectLabelEl = document.getElementById('accountSelectLabel');
     const pageNameEl = document.getElementById('pageName');
@@ -564,9 +526,6 @@
     const defaultSettings = {
       fxRate: 32,
       selectedPlatform: 'meta',
-      googleSource: 'db',
-      googleDbReportDate: '',
-      googleDbGameName: '',
       selectedAccountIdByPlatform: {
         meta: '',
         google: ''
@@ -596,9 +555,6 @@
         return {
           fxRate: Number(parsed.fxRate) > 0 ? Number(parsed.fxRate) : defaultSettings.fxRate,
           selectedPlatform: parsed.selectedPlatform || 'meta',
-          googleSource: parsed.googleSource || 'db',
-          googleDbReportDate: parsed.googleDbReportDate || '',
-          googleDbGameName: parsed.googleDbGameName || '',
           selectedAccountIdByPlatform: {
             meta: parsed.selectedAccountIdByPlatform?.meta || migratedSelectedMeta,
             google: parsed.selectedAccountIdByPlatform?.google || ''
@@ -631,15 +587,6 @@
 
     function getCurrentSelectedAccountId() {
       return settings.selectedAccountIdByPlatform?.[getCurrentPlatform()] || '';
-    }
-
-    function getCurrentSelectedAccountName() {
-      const accountId = getCurrentSelectedAccountId();
-      const platform = getCurrentPlatform();
-      const found = settings.accounts.find((item) => {
-        return (item.platform || 'meta') === platform && item.accountId === accountId;
-      });
-      return found?.name || '';
     }
 
     function setCurrentSelectedAccountId(accountId) {
@@ -711,17 +658,6 @@
       }
     }
 
-    function arrayBufferToBase64(buffer) {
-      let binary = '';
-      const bytes = new Uint8Array(buffer);
-      const chunkSize = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.subarray(i, i + chunkSize);
-        binary += String.fromCharCode.apply(null, chunk);
-      }
-      return btoa(binary);
-    }
-
     function toNumber(value) {
       const n = Number(value);
       return Number.isFinite(n) ? n : 0;
@@ -775,7 +711,15 @@
       return fuzzy ? toNumber(fuzzy.value) : 0;
     }
 
-    function detectOs(name) {
+    function detectOs(row, name) {
+      const apiOs = String(row?.os || '').trim().toLowerCase();
+      if (apiOs === 'android') {
+        return 'Android';
+      }
+      if (apiOs === 'ios') {
+        return 'iOS';
+      }
+
       const text = String(name || '').toLowerCase();
       if (text.includes('android') || text.includes('aos') || text.includes('and_')) {
         return 'Android';
@@ -789,19 +733,20 @@
     function normalizeRows(rows, source) {
       return rows.map((row, index) => {
         const results = getAfDownload(row.actions);
-        const spendUsd = toNumber(row.spend);
         const normalizedSpendUsd = toUsdFromRow(row);
         const impressions = toNumber(row.impressions);
         const clicks = toNumber(row.clicks);
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
         const cpiUsd = results > 0 ? normalizedSpendUsd / results : 0;
         const name = rowName(row);
+        const date = row.date_start || row.date_stop || '-';
 
         return {
           id: `${source}-${name}-${row.date_start || ''}-${row.date_stop || ''}-${index}`,
           source,
           name,
-          os: detectOs(name),
+          date,
+          os: detectOs(row, name),
           spendUsd: normalizedSpendUsd,
           impressions,
           clicks,
@@ -851,124 +796,13 @@
     }
 
     function setPlatformUI() {
-      const platform = getCurrentPlatform();
-      const isGoogle = platform === 'google';
-      const isGoogleDb = isGoogle && (settings.googleSource || 'db') === 'db';
-
+      const isGoogle = getCurrentPlatform() === 'google';
       accountSelectLabelEl.textContent = isGoogle ? 'Google 帳號設定' : 'Meta 帳號設定';
       pageNameLabelEl.textContent = isGoogle ? 'Google 帳號名稱' : 'Meta 帳號名稱';
       pageAccountIdLabelEl.textContent = isGoogle ? 'Google Customer ID' : 'Meta 廣告帳號 ID';
       pageAccountIdEl.placeholder = isGoogle ? '123-456-7890 或 1234567890' : 'act_1234567890';
       levelEl.disabled = isGoogle;
-      googleSourceWrapEl.hidden = !isGoogle;
-      googleReportDateWrapEl.hidden = !isGoogleDb;
-      googleGameNameWrapEl.hidden = !isGoogleDb;
-      googleImportPanelEl.hidden = !isGoogle;
       renderAccountOptions();
-
-      if (isGoogleDb) {
-        refreshGoogleDbFilters();
-      }
-    }
-
-    async function refreshGoogleDbFilters() {
-      if (getCurrentPlatform() !== 'google' || (settings.googleSource || 'db') !== 'db') {
-        return;
-      }
-
-      try {
-        const params = new URLSearchParams();
-        const accountId = getCurrentSelectedAccountId();
-        if (accountId) {
-          params.set('accountId', accountId);
-        }
-
-        const response = await fetch(`/api/google/db-filters?${params.toString()}`);
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error || '載入 Google 篩選失敗');
-        }
-
-        const dateOptions = ['<option value="">全部日期</option>'];
-        (payload.reportDates || []).forEach((date) => {
-          dateOptions.push(`<option value="${date}">${date}</option>`);
-        });
-        googleReportDateEl.innerHTML = dateOptions.join('');
-
-        const gameOptions = ['<option value="">全部遊戲</option>'];
-        (payload.gameNames || []).forEach((game) => {
-          gameOptions.push(`<option value="${game}">${game}</option>`);
-        });
-        googleGameNameEl.innerHTML = gameOptions.join('');
-
-        if ((payload.reportDates || []).includes(settings.googleDbReportDate)) {
-          googleReportDateEl.value = settings.googleDbReportDate;
-        } else {
-          settings.googleDbReportDate = '';
-          googleReportDateEl.value = '';
-        }
-
-        if ((payload.gameNames || []).includes(settings.googleDbGameName)) {
-          googleGameNameEl.value = settings.googleDbGameName;
-        } else {
-          settings.googleDbGameName = '';
-          googleGameNameEl.value = '';
-        }
-
-        saveSettings();
-      } catch (error) {
-        setStatus(error.message || '載入 Google 篩選失敗。', true);
-      }
-    }
-
-    async function importGoogleCsv() {
-      if (!googleCsvFileEl.files || !googleCsvFileEl.files.length) {
-        setStatus('請先選擇 Google 報表檔案。', true);
-        return;
-      }
-
-      const file = googleCsvFileEl.files[0];
-      importGoogleCsvBtn.disabled = true;
-      setStatus('Google CSV 匯入中，請稍候...');
-
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const csvBase64 = arrayBufferToBase64(arrayBuffer);
-        const response = await fetch('/api/google/import-csv', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            csvBase64,
-            accountId: getCurrentSelectedAccountId(),
-            fileName: file.name,
-            gameName: getCurrentSelectedAccountName()
-          })
-        });
-
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error || '匯入失敗');
-        }
-
-        const datesText = Array.isArray(payload.reportDates) && payload.reportDates.length
-          ? `，日期：${payload.reportDates.join(', ')}`
-          : '';
-        setStatus(`Google CSV 匯入完成，共 ${payload.imported || 0} 筆${datesText}。`);
-
-        await refreshGoogleDbFilters();
-
-        if (getCurrentPlatform() === 'google') {
-          await queryData();
-        } else {
-          renderIntegratedView();
-        }
-      } catch (error) {
-        setStatus(error.message || '匯入 Google CSV 發生錯誤。', true);
-      } finally {
-        importGoogleCsvBtn.disabled = false;
-      }
     }
 
     function upsertAccount() {
@@ -1075,6 +909,8 @@
           <tr>
             <td class="checkbox-cell"><input class="row-check" type="checkbox" data-row-id="${row.id}" ${checked} /></td>
             <td>${row.name}</td>
+            <td>${row.date}</td>
+            <td>${row.os}</td>
             <td>${nf.format(row.impressions)}</td>
             <td>${nf.format(row.clicks)}</td>
             <td>${row.ctr.toFixed(2)}%</td>
@@ -1218,16 +1054,6 @@
 
         if (platform === 'meta') {
           params.set('level', levelEl.value);
-        } else {
-          params.set('source', settings.googleSource || 'db');
-          if ((settings.googleSource || 'db') === 'db') {
-            if (settings.googleDbReportDate) {
-              params.set('reportDate', settings.googleDbReportDate);
-            }
-            if (settings.googleDbGameName) {
-              params.set('gameName', settings.googleDbGameName);
-            }
-          }
         }
 
         const selectedAccountId = getCurrentSelectedAccountId();
@@ -1235,17 +1061,13 @@
           params.set('accountId', selectedAccountId);
         }
 
-        const usingGoogleDbFixedDate = platform === 'google'
-          && (settings.googleSource || 'db') === 'db'
-          && Boolean(settings.googleDbReportDate);
-
-        if (!usingGoogleDbFixedDate && modeEl.value === 'custom') {
+        if (modeEl.value === 'custom') {
           if (!sinceEl.value || !untilEl.value) {
             throw new Error('自訂日期需要同時選擇開始與結束日期。');
           }
           params.set('since', sinceEl.value);
           params.set('until', untilEl.value);
-        } else if (!usingGoogleDbFixedDate) {
+        } else {
           params.set('datePreset', datePresetEl.value);
         }
 
@@ -1295,27 +1117,9 @@
       setCurrentSelectedAccountId(accountSelectEl.value);
       saveSettings();
       syncAccountForm();
-
-      if (getCurrentPlatform() === 'google' && (settings.googleSource || 'db') === 'db') {
-        refreshGoogleDbFilters();
-      }
     });
     addPageBtn.addEventListener('click', upsertAccount);
     removePageBtn.addEventListener('click', removeCurrentAccount);
-    googleSourceEl.addEventListener('change', () => {
-      settings.googleSource = googleSourceEl.value;
-      saveSettings();
-      setPlatformUI();
-    });
-    googleReportDateEl.addEventListener('change', () => {
-      settings.googleDbReportDate = googleReportDateEl.value;
-      saveSettings();
-    });
-    googleGameNameEl.addEventListener('change', () => {
-      settings.googleDbGameName = googleGameNameEl.value;
-      saveSettings();
-    });
-    importGoogleCsvBtn.addEventListener('click', importGoogleCsv);
     fxRateEl.addEventListener('change', () => {
       const fx = getFxRate();
       if (!fx) {
@@ -1335,7 +1139,6 @@
     queryBtn.addEventListener('click', queryData);
 
     fxRateEl.value = settings.fxRate;
-    googleSourceEl.value = settings.googleSource || 'db';
     setModeUI();
     setActiveTab(settings.selectedPlatform === 'google' ? 'google' : 'meta');
   </script>
