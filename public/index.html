@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meta 廣告數據儀表板</title>
+  <style>
+    :root {
+      --bg: #f6f3ec;
+      --panel: #fffaf1;
+      --ink: #1f2a36;
+      --muted: #5f6b76;
+      --line: #dccfb3;
+      --brand: #0f7b6c;
+      --brand-strong: #0a5f54;
+      --accent: #f07f2f;
+      --ok: #0c9b4e;
+      --warn: #b24a35;
+      --shadow: 0 14px 40px rgba(31, 42, 54, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 5% 10%, #f6c982 0, transparent 30%),
+        radial-gradient(circle at 95% 20%, #97d4cb 0, transparent 28%),
+        linear-gradient(135deg, #f6f3ec 0%, #f1eee5 100%);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      animation: rise 0.5s ease-out;
+    }
+
+    .title {
+      margin: 0;
+      font-size: clamp(1.5rem, 2.4vw, 2.2rem);
+      letter-spacing: 0.03em;
+      font-weight: 800;
+    }
+
+    .subtitle {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .panel {
+      margin-top: 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      gap: 12px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .settings-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .settings-actions button {
+      flex: 1;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    select,
+    input,
+    button {
+      width: 100%;
+      border: 1px solid #cdbf9f;
+      border-radius: 10px;
+      background: #fffdf8;
+      padding: 10px;
+      font-size: 0.95rem;
+      color: var(--ink);
+    }
+
+    button {
+      border: none;
+      background: linear-gradient(130deg, var(--brand), var(--brand-strong));
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.2s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .status {
+      margin-top: 12px;
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .status.error {
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(140px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .card {
+      padding: 14px;
+      border-radius: 14px;
+      background: #fffdf8;
+      border: 1px solid #e6d9bf;
+      animation: rise 0.4s ease-out;
+    }
+
+    .card h3 {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .card p {
+      margin: 8px 0 0;
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--ink);
+    }
+
+    .table-wrap {
+      margin-top: 14px;
+      overflow-x: auto;
+      border-radius: 14px;
+      border: 1px solid #e1d4bb;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th,
+    td {
+      padding: 10px;
+      border-bottom: 1px solid #efe5d1;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .checkbox-cell {
+      width: 72px;
+      text-align: center;
+    }
+
+    .checkbox-cell input {
+      width: auto;
+      transform: scale(1.15);
+      cursor: pointer;
+    }
+
+    th {
+      background: #f8f1e2;
+      color: #4e3d2a;
+      position: sticky;
+      top: 0;
+    }
+
+    tr:hover td {
+      background: #fff8ea;
+    }
+
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 980px) {
+      .settings-grid {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+      }
+
+      .filters {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+      }
+
+      .summary {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      body {
+        padding: 12px;
+      }
+
+      .panel {
+        padding: 14px;
+      }
+
+      .filters,
+      .settings-grid,
+      .summary {
+        grid-template-columns: 1fr;
+      }
+
+      .settings-actions {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="title">Meta 廣告數據儀表板</h1>
+    <p class="subtitle">可切換日期區間與層級，快速查看花費、曝光、點擊與平均表現。</p>
+
+    <section class="panel">
+      <div class="settings-grid">
+        <div>
+          <label for="accountSelect">粉絲團設定</label>
+          <select id="accountSelect"></select>
+        </div>
+
+        <div>
+          <label for="pageName">粉絲團名稱</label>
+          <input id="pageName" type="text" placeholder="例如：主品牌粉專" />
+        </div>
+
+        <div>
+          <label for="pageAccountId">廣告帳號 ID</label>
+          <input id="pageAccountId" type="text" placeholder="act_1234567890" />
+        </div>
+
+        <div class="settings-actions">
+          <button id="addPageBtn" type="button">新增/更新</button>
+          <button id="removePageBtn" type="button">刪除</button>
+        </div>
+      </div>
+
+      <div class="filters">
+        <div>
+          <label for="mode">日期模式</label>
+          <select id="mode">
+            <option value="preset">快速區間</option>
+            <option value="custom">自訂日期</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="datePreset">快速區間</label>
+          <select id="datePreset">
+            <option value="today">today</option>
+            <option value="yesterday">yesterday</option>
+            <option value="last_7d" selected>last_7d</option>
+            <option value="last_30d">last_30d</option>
+            <option value="this_month">this_month</option>
+            <option value="last_month">last_month</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="since">開始日期</label>
+          <input id="since" type="date" disabled />
+        </div>
+
+        <div>
+          <label for="until">結束日期</label>
+          <input id="until" type="date" disabled />
+        </div>
+
+        <div>
+          <label for="level">層級</label>
+          <select id="level">
+            <option value="campaign" selected>campaign</option>
+            <option value="adset">adset</option>
+            <option value="ad">ad</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="fxRate">美金匯率 (USD -> TWD)</label>
+          <input id="fxRate" type="number" min="0" step="0.01" value="32" />
+        </div>
+      </div>
+
+      <div style="margin-top: 12px; max-width: 240px;">
+        <button id="queryBtn">查詢數據</button>
+      </div>
+
+      <div id="status" class="status">準備查詢。</div>
+
+      <div id="summary" class="summary" hidden>
+        <div class="card">
+          <h3>曝光次數</h3>
+          <p id="sumImpressions">-</p>
+        </div>
+        <div class="card">
+          <h3>點擊次數</h3>
+          <p id="sumClicks">-</p>
+        </div>
+        <div class="card">
+          <h3>CTR</h3>
+          <p id="sumCtr">-</p>
+        </div>
+        <div class="card">
+          <h3>AF下載</h3>
+          <p id="sumResults">-</p>
+        </div>
+        <div class="card">
+          <h3>CPI (TWD)</h3>
+          <p id="avgCpi">-</p>
+        </div>
+        <div class="card">
+          <h3>花費 (TWD)</h3>
+          <p id="sumSpend">-</p>
+        </div>
+      </div>
+
+      <div id="tableWrap" class="table-wrap" hidden>
+        <table>
+          <thead>
+            <tr>
+              <th class="checkbox-cell"><input id="checkAll" type="checkbox" /></th>
+              <th>名稱</th>
+              <th>曝光次數</th>
+              <th>點擊次數</th>
+              <th>CTR</th>
+              <th>AF下載</th>
+              <th>CPI (TWD)</th>
+              <th>花費 (TWD)</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const modeEl = document.getElementById('mode');
+    const datePresetEl = document.getElementById('datePreset');
+    const sinceEl = document.getElementById('since');
+    const untilEl = document.getElementById('until');
+    const levelEl = document.getElementById('level');
+    const fxRateEl = document.getElementById('fxRate');
+    const accountSelectEl = document.getElementById('accountSelect');
+    const pageNameEl = document.getElementById('pageName');
+    const pageAccountIdEl = document.getElementById('pageAccountId');
+    const addPageBtn = document.getElementById('addPageBtn');
+    const removePageBtn = document.getElementById('removePageBtn');
+    const queryBtn = document.getElementById('queryBtn');
+    const checkAllEl = document.getElementById('checkAll');
+    const statusEl = document.getElementById('status');
+    const summaryEl = document.getElementById('summary');
+    const tableWrapEl = document.getElementById('tableWrap');
+    const tbodyEl = document.getElementById('tbody');
+
+    const sumImpressionsEl = document.getElementById('sumImpressions');
+    const sumClicksEl = document.getElementById('sumClicks');
+    const sumCtrEl = document.getElementById('sumCtr');
+    const sumResultsEl = document.getElementById('sumResults');
+    const avgCpiEl = document.getElementById('avgCpi');
+    const sumSpendEl = document.getElementById('sumSpend');
+
+    const nf = new Intl.NumberFormat('zh-TW');
+    const twdFormatter = new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 });
+    const SETTINGS_KEY = 'meta_dashboard_settings_v1';
+    const defaultSettings = {
+      fxRate: 32,
+      selectedAccountId: '',
+      accounts: []
+    };
+
+    let settings = loadSettings();
+    let currentRows = [];
+    let selectedRowIds = new Set();
+
+    function loadSettings() {
+      try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (!raw) {
+          return { ...defaultSettings };
+        }
+
+        const parsed = JSON.parse(raw);
+        return {
+          fxRate: Number(parsed.fxRate) > 0 ? Number(parsed.fxRate) : defaultSettings.fxRate,
+          selectedAccountId: parsed.selectedAccountId || '',
+          accounts: Array.isArray(parsed.accounts) ? parsed.accounts : []
+        };
+      } catch (error) {
+        return { ...defaultSettings };
+      }
+    }
+
+    function saveSettings() {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    }
+
+    function isValidAccountId(text) {
+      return /^act_\d+$/.test(text);
+    }
+
+    function setModeUI() {
+      const isCustom = modeEl.value === 'custom';
+      sinceEl.disabled = !isCustom;
+      untilEl.disabled = !isCustom;
+      datePresetEl.disabled = isCustom;
+    }
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.classList.toggle('error', isError);
+    }
+
+    function toNumber(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function getFxRate() {
+      const fx = Number(fxRateEl.value);
+      return Number.isFinite(fx) && fx > 0 ? fx : 0;
+    }
+
+    function toTwd(valueInUsd) {
+      return toNumber(valueInUsd) * getFxRate();
+    }
+
+    function formatTWD(valueInUsd) {
+      return twdFormatter.format(toTwd(valueInUsd));
+    }
+
+    function getResultValue(actions) {
+      if (!Array.isArray(actions)) {
+        return 0;
+      }
+
+      return actions.reduce((sum, item) => {
+        return sum + toNumber(item.value);
+      }, 0);
+    }
+
+    function rowName(row) {
+      return row.campaign_name || row.adset_name || row.ad_name || '未命名';
+    }
+
+    function getAfDownload(actions) {
+      if (!Array.isArray(actions)) {
+        return 0;
+      }
+
+      const preferredTypes = [
+        'mobile_app_install',
+        'app_install',
+        'omni_app_install',
+        'app_custom_event.fb_mobile_activate_app'
+      ];
+
+      for (const type of preferredTypes) {
+        const found = actions.find((item) => item.action_type === type);
+        if (found) {
+          return toNumber(found.value);
+        }
+      }
+
+      const fuzzy = actions.find((item) => {
+        const t = String(item.action_type || '').toLowerCase();
+        return t.includes('install') || t.includes('download') || t.includes('af');
+      });
+
+      return fuzzy ? toNumber(fuzzy.value) : 0;
+    }
+
+    function normalizeRows(rows) {
+      return rows.map((row, index) => {
+        const results = getAfDownload(row.actions);
+        const spendUsd = toNumber(row.spend);
+        const cpiUsd = results > 0 ? spendUsd / results : 0;
+        const impressions = toNumber(row.impressions);
+        const clicks = toNumber(row.clicks);
+        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+
+        return {
+          id: `${rowName(row)}-${row.date_start || ''}-${row.date_stop || ''}-${index}`,
+          name: rowName(row),
+          spendUsd,
+          impressions,
+          clicks,
+          ctr,
+          results,
+          cpiUsd
+        };
+      });
+    }
+
+    function syncAccountForm() {
+      const selected = settings.accounts.find((item) => item.accountId === accountSelectEl.value);
+      if (!selected) {
+        pageNameEl.value = '';
+        pageAccountIdEl.value = '';
+        return;
+      }
+
+      pageNameEl.value = selected.name;
+      pageAccountIdEl.value = selected.accountId;
+    }
+
+    function renderAccountOptions() {
+      const optionsHtml = settings.accounts.map((item) => {
+        const selected = item.accountId === settings.selectedAccountId ? 'selected' : '';
+        return `<option value="${item.accountId}" ${selected}>${item.name} (${item.accountId})</option>`;
+      }).join('');
+
+      accountSelectEl.innerHTML = optionsHtml || '<option value="">未設定粉絲團</option>';
+
+      if (!settings.selectedAccountId && settings.accounts.length) {
+        settings.selectedAccountId = settings.accounts[0].accountId;
+        saveSettings();
+      }
+
+      if (settings.selectedAccountId) {
+        accountSelectEl.value = settings.selectedAccountId;
+      }
+
+      syncAccountForm();
+    }
+
+    function upsertAccount() {
+      const name = pageNameEl.value.trim();
+      const accountId = pageAccountIdEl.value.trim();
+
+      if (!name) {
+        setStatus('請輸入粉絲團名稱。', true);
+        return;
+      }
+
+      if (!isValidAccountId(accountId)) {
+        setStatus('廣告帳號 ID 格式需為 act_ 開頭加數字。', true);
+        return;
+      }
+
+      const idx = settings.accounts.findIndex((item) => item.accountId === accountId);
+      if (idx >= 0) {
+        settings.accounts[idx] = { name, accountId };
+      } else {
+        settings.accounts.push({ name, accountId });
+      }
+
+      settings.selectedAccountId = accountId;
+      saveSettings();
+      renderAccountOptions();
+      setStatus('粉絲團設定已儲存。');
+    }
+
+    function removeCurrentAccount() {
+      const accountId = accountSelectEl.value;
+      if (!accountId) {
+        setStatus('目前沒有可刪除的粉絲團設定。', true);
+        return;
+      }
+
+      settings.accounts = settings.accounts.filter((item) => item.accountId !== accountId);
+      settings.selectedAccountId = settings.accounts[0]?.accountId || '';
+      saveSettings();
+      renderAccountOptions();
+      setStatus('粉絲團設定已刪除。');
+    }
+
+    function getSelectedRows() {
+      return currentRows.filter((row) => selectedRowIds.has(row.id));
+    }
+
+    function updateSummaryFromSelection() {
+      const selectedRows = getSelectedRows();
+      const totalSpendUsd = selectedRows.reduce((sum, row) => sum + row.spendUsd, 0);
+      const totalImpressions = selectedRows.reduce((sum, row) => sum + row.impressions, 0);
+      const totalClicks = selectedRows.reduce((sum, row) => sum + row.clicks, 0);
+      const totalResults = selectedRows.reduce((sum, row) => sum + row.results, 0);
+      const totalCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+      const avgCpi = totalResults > 0 ? toTwd(totalSpendUsd) / totalResults : 0;
+
+      sumImpressionsEl.textContent = nf.format(totalImpressions);
+      sumClicksEl.textContent = nf.format(totalClicks);
+      sumCtrEl.textContent = `${totalCtr.toFixed(2)}%`;
+      sumResultsEl.textContent = nf.format(totalResults);
+      avgCpiEl.textContent = totalResults > 0 ? twdFormatter.format(avgCpi) : '-';
+      sumSpendEl.textContent = twdFormatter.format(toTwd(totalSpendUsd));
+      summaryEl.hidden = false;
+
+      checkAllEl.checked = currentRows.length > 0 && selectedRows.length === currentRows.length;
+      checkAllEl.indeterminate = selectedRows.length > 0 && selectedRows.length < currentRows.length;
+    }
+
+    function bindRowCheckboxEvents() {
+      const checkboxes = document.querySelectorAll('.row-check');
+      checkboxes.forEach((checkbox) => {
+        checkbox.addEventListener('change', (event) => {
+          const rowId = event.target.dataset.rowId;
+          if (event.target.checked) {
+            selectedRowIds.add(rowId);
+          } else {
+            selectedRowIds.delete(rowId);
+          }
+
+          updateSummaryFromSelection();
+        });
+      });
+    }
+
+    function renderTable() {
+      tbodyEl.innerHTML = currentRows.map((row) => {
+        const checked = selectedRowIds.has(row.id) ? 'checked' : '';
+        return `
+          <tr>
+            <td class="checkbox-cell"><input class="row-check" type="checkbox" data-row-id="${row.id}" ${checked} /></td>
+            <td>${row.name}</td>
+            <td>${nf.format(row.impressions)}</td>
+            <td>${nf.format(row.clicks)}</td>
+            <td>${row.ctr.toFixed(2)}%</td>
+            <td>${nf.format(row.results)}</td>
+            <td>${row.results > 0 ? twdFormatter.format(toTwd(row.cpiUsd)) : '-'}</td>
+            <td>${twdFormatter.format(toTwd(row.spendUsd))}</td>
+          </tr>
+        `;
+      }).join('');
+
+      tableWrapEl.hidden = false;
+      bindRowCheckboxEvents();
+      updateSummaryFromSelection();
+    }
+
+    function selectAllRows(checked) {
+      if (checked) {
+        selectedRowIds = new Set(currentRows.map((row) => row.id));
+      } else {
+        selectedRowIds = new Set();
+      }
+      renderTable();
+    }
+
+    async function queryData() {
+      queryBtn.disabled = true;
+      tableWrapEl.hidden = true;
+      summaryEl.hidden = true;
+      setStatus('查詢中，請稍候...');
+
+      try {
+        const fx = getFxRate();
+        if (!fx) {
+          throw new Error('匯率需大於 0。');
+        }
+
+        settings.fxRate = fx;
+        saveSettings();
+
+        const params = new URLSearchParams();
+        params.set('level', levelEl.value);
+
+        if (settings.selectedAccountId) {
+          params.set('accountId', settings.selectedAccountId);
+        }
+
+        if (modeEl.value === 'custom') {
+          if (!sinceEl.value || !untilEl.value) {
+            throw new Error('自訂日期需要同時選擇開始與結束日期。');
+          }
+          params.set('since', sinceEl.value);
+          params.set('until', untilEl.value);
+        } else {
+          params.set('datePreset', datePresetEl.value);
+        }
+
+        const response = await fetch(`/api/insights?${params.toString()}`);
+        const payload = await response.json();
+
+        if (!response.ok) {
+          const details = payload.details ? JSON.stringify(payload.details) : '';
+          throw new Error(payload.error ? `${payload.error} ${details}` : '查詢失敗');
+        }
+
+        const rows = payload.data || [];
+        if (!rows.length) {
+          currentRows = [];
+          selectedRowIds = new Set();
+          setStatus('此區間無資料。');
+          return;
+        }
+
+        currentRows = normalizeRows(rows);
+        selectedRowIds = new Set(currentRows.map((row) => row.id));
+        renderTable();
+        setStatus(`查詢完成，共 ${rows.length} 筆。可用勾選框加總上方數據。`);
+      } catch (error) {
+        setStatus(error.message || '查詢發生錯誤。', true);
+      } finally {
+        queryBtn.disabled = false;
+      }
+    }
+
+    modeEl.addEventListener('change', setModeUI);
+    accountSelectEl.addEventListener('change', () => {
+      settings.selectedAccountId = accountSelectEl.value;
+      saveSettings();
+      syncAccountForm();
+    });
+    addPageBtn.addEventListener('click', upsertAccount);
+    removePageBtn.addEventListener('click', removeCurrentAccount);
+    fxRateEl.addEventListener('change', () => {
+      const fx = getFxRate();
+      if (!fx) {
+        setStatus('匯率需大於 0。', true);
+        return;
+      }
+
+      settings.fxRate = fx;
+      saveSettings();
+
+      if (currentRows.length) {
+        renderTable();
+      }
+
+      setStatus('匯率已更新。');
+    });
+    checkAllEl.addEventListener('change', (event) => {
+      selectAllRows(event.target.checked);
+    });
+    queryBtn.addEventListener('click', queryData);
+
+    fxRateEl.value = settings.fxRate;
+    renderAccountOptions();
+    setModeUI();
+    queryData();
+  </script>
+</body>
+</html>
