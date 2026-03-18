@@ -25,6 +25,8 @@ const META_OAUTH_REDIRECT_URI = process.env.META_OAUTH_REDIRECT_URI;
 const META_SCOPE = process.env.META_SCOPE || 'ads_read';
 const PORT = process.env.PORT || 3000;
 const ENV_FILE = path.join(__dirname, '.env');
+const DATA_DIR = path.join(__dirname, 'data');
+const APPSFLYER_DIR = path.join(DATA_DIR, 'appsflyer');
 
 function hasMetaConfig() {
     return Boolean(ACCESS_TOKEN && AD_ACCOUNT_ID);
@@ -66,6 +68,299 @@ function formatDate(date) {
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+}
+
+function ensureDir(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+    }
+}
+
+function parseCsvText(csvText) {
+    const rows = [];
+    let current = '';
+    let row = [];
+    let inQuotes = false;
+
+    for (let i = 0; i < csvText.length; i += 1) {
+        const char = csvText[i];
+        const next = csvText[i + 1];
+
+        if (char === '"') {
+            if (inQuotes && next === '"') {
+                current += '"';
+                i += 1;
+            } else {
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+
+        if (char === ',' && !inQuotes) {
+            row.push(current);
+            current = '';
+            continue;
+        }
+
+        if ((char === '\n' || char === '\r') && !inQuotes) {
+            if (char === '\r' && next === '\n') {
+                i += 1;
+            }
+
+            row.push(current);
+            rows.push(row);
+            row = [];
+            current = '';
+            continue;
+        }
+
+        current += char;
+    }
+
+    if (current.length > 0 || row.length > 0) {
+        row.push(current);
+        rows.push(row);
+    }
+
+    return rows;
+}
+
+function toNumber(value) {
+    const text = String(value ?? '').trim();
+    if (!text) {
+        return 0;
+    }
+
+    const normalized = text.replace(/,/g, '');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeAppsflyerRows(headers, rows) {
+    const headerIndex = new Map();
+    headers.forEach((item, idx) => {
+        headerIndex.set(String(item || '').trim(), idx);
+    });
+
+    const getValue = (row, key) => {
+        const idx = headerIndex.get(key);
+        return idx === undefined ? '' : String(row[idx] ?? '').trim();
+    };
+
+    return rows
+        .filter((row) => row.some((item) => String(item || '').trim() !== ''))
+        .map((row) => {
+            const impressions = toNumber(getValue(row, 'Impressions'));
+            const clicks = toNumber(getValue(row, 'Clicks'));
+            const totalAttributions = toNumber(getValue(row, 'Total attributions appsflyer'));
+            const activated = toNumber(getValue(row, 'Installs appsflyer'));
+            const reattributions = toNumber(getValue(row, 'Re-attributions appsflyer'));
+            const reengagements = toNumber(getValue(row, 'Re-engagements appsflyer'));
+            
+            // 嘗試提取自然歸因和非自然歸因
+            const organicInstalls = toNumber(getValue(row, 'Organic installs appsflyer')) || 
+                                    toNumber(getValue(row, 'Organic Installs appsflyer')) || 
+                                    toNumber(getValue(row, 'Organic'));
+            const nonOrganicInstalls = toNumber(getValue(row, 'Non-organic installs appsflyer')) || 
+                                       toNumber(getValue(row, 'Non-organic Installs appsflyer')) || 
+                                       toNumber(getValue(row, 'Non-organic'));
+
+            // 提取 OS/Platform 欄位
+            const os = getValue(row, 'OS') || getValue(row, 'Platform') || getValue(row, 'Operating system');
+
+            return {
+                os,
+                mediaSource: getValue(row, 'Media source') || 'None',
+                campaign: getValue(row, 'Campaign') || 'None',
+                impressions,
+                clicks,
+                totalAttributions,
+                activated,
+                reattributions,
+                reengagements,
+                afTotal: activated + reattributions + reengagements,
+                cost: toNumber(getValue(row, 'Cost')),
+                ecpi: toNumber(getValue(row, 'eCPI appsflyer')),
+                organicInstalls,
+                nonOrganicInstalls
+            };
+        });
+}
+
+function summarizeAppsflyerRows(rows) {
+    const totalCost = rows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
+    const totalActivated = rows.reduce((sum, row) => sum + Number(row.activated || 0), 0);
+    const totalClicks = rows.reduce((sum, row) => sum + Number(row.clicks || 0), 0);
+    const totalAttributions = rows.reduce((sum, row) => sum + Number(row.totalAttributions || 0), 0);
+    const totalAf = rows.reduce((sum, row) => sum + Number(row.afTotal || 0), 0);
+    return {
+        rowCount: rows.length,
+        totalCost,
+        totalActivated,
+        totalClicks,
+        totalAttributions,
+        totalAf
+    };
+}
+
+function extractDateRangeFromFileName(fileName) {
+    const text = String(fileName || '');
+    const match = text.match(/([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})\s*-\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})/);
+    if (!match) {
+        return null;
+    }
+
+    const start = new Date(match[1]);
+    const end = new Date(match[2]);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return null;
+    }
+
+    return {
+        since: formatDate(start),
+        until: formatDate(end)
+    };
+}
+
+function overlapDateRange(aSince, aUntil, bSince, bUntil) {
+    return aSince <= bUntil && aUntil >= bSince;
+}
+
+function detectOSFromRows(rows) {
+    if (!rows || !rows.length) return 'Unknown';
+    
+    const osSet = new Set();
+    rows.forEach(row => {
+        if (row.os && row.os.trim()) {
+            osSet.add(row.os.toLowerCase());
+        }
+    });
+    
+    if (osSet.size === 0) return 'Unknown';
+    if (osSet.size === 1) return Array.from(osSet)[0];
+    
+    // 混合多個OS，判斷主要OS
+    const osArray = Array.from(osSet);
+    if (osArray.includes('android') && osArray.includes('ios')) return 'Mixed';
+    if (osArray.includes('android')) return 'Android';
+    if (osArray.includes('ios')) return 'iOS';
+    return 'Unknown';
+}
+
+function removeOldDuplicateFiles(newReportSince, newReportUntil, newOS) {
+    try {
+        ensureDir(APPSFLYER_DIR);
+        const files = fs.readdirSync(APPSFLYER_DIR)
+            .filter((file) => file.toLowerCase().endsWith('.json'))
+            .map((file) => ({
+                name: file,
+                path: path.join(APPSFLYER_DIR, file)
+            }));
+        
+        files.forEach(({ name, path: filePath }) => {
+            try {
+                const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                const existingSince = content.meta?.reportSince;
+                const existingUntil = content.meta?.reportUntil;
+                const existingOS = content.meta?.detectedOS || 'Unknown';
+                
+                // 如果日期範圍完全相同且 OS 相同，刪除舊檔案
+                if (
+                    existingSince === newReportSince &&
+                    existingUntil === newReportUntil &&
+                    existingOS.toLowerCase() === newOS.toLowerCase()
+                ) {
+                    const csvFile = name.replace(/\.json$/, '.csv');
+                    const csvPath = path.join(APPSFLYER_DIR, csvFile);
+                    
+                    // 刪除舊的 JSON 和 CSV
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                    if (fs.existsSync(csvPath)) fs.unlinkSync(csvPath);
+                    
+                    console.log(`✓ 已移除重複檔案: ${name}`);
+                }
+            } catch (err) {
+                console.error(`讀取檔案 ${name} 失敗:`, err.message);
+            }
+        });
+    } catch (error) {
+        console.error('移除重複檔案失敗:', error.message);
+    }
+}
+
+function buildAppsflyerInsights(options = {}) {
+    const { datePreset = 'last_7d', since, until } = options;
+    const targetRange = resolveDateRange({ datePreset, since, until });
+
+    ensureDir(APPSFLYER_DIR);
+    const jsonFiles = fs.readdirSync(APPSFLYER_DIR)
+        .filter((file) => file.toLowerCase().endsWith('.json'));
+    const totalFileCount = jsonFiles.length;
+    let matchedFileCount = 0;
+
+    const grouped = new Map();
+    jsonFiles.forEach((file) => {
+        const filePath = path.join(APPSFLYER_DIR, file);
+        const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const rows = Array.isArray(content.rows) ? content.rows : [];
+        const metaSince = String(content.meta?.reportSince || content.meta?.since || '').trim();
+        const metaUntil = String(content.meta?.reportUntil || content.meta?.until || '').trim();
+        const recordSince = isValidDateFormat(metaSince) ? metaSince : targetRange.since;
+        const recordUntil = isValidDateFormat(metaUntil) ? metaUntil : recordSince;
+
+        if (!overlapDateRange(recordSince, recordUntil, targetRange.since, targetRange.until)) {
+            return;
+        }
+        matchedFileCount += 1;
+
+        rows.forEach((row) => {
+            const mediaSource = String(row.mediaSource || 'None');
+            const campaign = String(row.campaign || 'None');
+            const key = `${mediaSource}|${campaign}`;
+            const current = grouped.get(key) || {
+                mediaSource,
+                campaign,
+                impressions: 0,
+                clicks: 0,
+                totalAttributions: 0,
+                afTotal: 0,
+                activated: 0,
+                reattributions: 0,
+                reengagements: 0
+            };
+
+            const impressions = Number(row.impressions || 0);
+            const clicks = Number(row.clicks || 0);
+            const totalAttributions = Number(row.totalAttributions || 0);
+            const activated = Number(row.activated || row.installs || 0);
+            const reattributions = Number(row.reattributions || 0);
+            const reengagements = Number(row.reengagements || 0);
+            const afTotal = Number(row.afTotal || (activated + reattributions + reengagements));
+
+            current.impressions += impressions;
+            current.clicks += clicks;
+            current.totalAttributions += totalAttributions;
+            current.afTotal += afTotal;
+            current.activated += activated;
+            current.reattributions += reattributions;
+            current.reengagements += reengagements;
+            grouped.set(key, current);
+        });
+    });
+
+    const rows = Array.from(grouped.values()).sort((a, b) => {
+        if (a.mediaSource !== b.mediaSource) {
+            return a.mediaSource.localeCompare(b.mediaSource, 'zh-Hant');
+        }
+
+        return a.campaign.localeCompare(b.campaign, 'zh-Hant');
+    });
+
+    return {
+        rows,
+        totalFileCount,
+        matchedFileCount
+    };
 }
 
 function resolveDateRange({ datePreset = 'last_7d', since, until }) {
@@ -450,6 +745,150 @@ app.post('/api/meta/token', (req, res) => {
     } catch (error) {
         return res.status(500).json({
             error: '寫入 ACCESS_TOKEN 失敗',
+            details: error.message
+        });
+    }
+});
+
+app.post('/api/appsflyer/import', (req, res) => {
+    try {
+        const { fileName, csvText } = req.body || {};
+        const safeFileName = String(fileName || '').trim();
+        const rawCsvText = String(csvText || '');
+
+        if (!safeFileName.toLowerCase().endsWith('.csv')) {
+            return res.status(400).json({ error: '請上傳 .csv 檔案。' });
+        }
+
+        if (!rawCsvText.trim()) {
+            return res.status(400).json({ error: 'CSV 內容為空。' });
+        }
+
+        const parsed = parseCsvText(rawCsvText);
+        if (!parsed.length) {
+            return res.status(400).json({ error: 'CSV 解析失敗，找不到資料列。' });
+        }
+
+        const headers = parsed[0].map((item) => String(item || '').trim());
+        const bodyRows = parsed.slice(1);
+        const normalizedRows = normalizeAppsflyerRows(headers, bodyRows);
+        const summary = summarizeAppsflyerRows(normalizedRows);
+        const parsedRange = extractDateRangeFromFileName(safeFileName);
+        const fallbackDate = formatDate(new Date());
+        const reportSince = parsedRange?.since || fallbackDate;
+        const reportUntil = parsedRange?.until || reportSince;
+        
+        // 自動偵測 OS
+        const detectedOS = detectOSFromRows(normalizedRows);
+        
+        // 檢查並移除相同日期+OS 的舊檔案（保留最新的）
+        removeOldDuplicateFiles(reportSince, reportUntil, detectedOS);
+
+        ensureDir(APPSFLYER_DIR);
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const baseName = safeFileName.replace(/\.csv$/i, '').replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_');
+        const osTag = detectedOS === 'Mixed' ? '_mixed' : detectedOS === 'Unknown' ? '_unknown' : `_${detectedOS.toLowerCase()}`;
+        const savedCsvFile = `${timestamp}${osTag}_${baseName}.csv`;
+        const savedJsonFile = `${timestamp}${osTag}_${baseName}.json`;
+
+        const savedCsvPath = path.join(APPSFLYER_DIR, savedCsvFile);
+        const savedJsonPath = path.join(APPSFLYER_DIR, savedJsonFile);
+
+        fs.writeFileSync(savedCsvPath, rawCsvText, 'utf8');
+        fs.writeFileSync(savedJsonPath, JSON.stringify({
+            meta: {
+                originalFileName: safeFileName,
+                createdAt: new Date().toLocaleString('zh-TW', { hour12: false }),
+                reportSince,
+                reportUntil,
+                detectedOS
+            },
+            headers,
+            summary,
+            rows: normalizedRows
+        }, null, 2), 'utf8');
+
+        return res.json({
+            ok: true,
+            savedCsvFile,
+            savedJsonFile,
+            summary,
+            detectedOS,
+            previewRows: normalizedRows.slice(0, 300)
+        });
+    } catch (error) {
+        return res.status(500).json({
+            error: 'Appsflyer 匯入建檔失敗',
+            details: error.message
+        });
+    }
+});
+
+app.get('/api/appsflyer/files', (req, res) => {
+    try {
+        ensureDir(APPSFLYER_DIR);
+        const files = fs.readdirSync(APPSFLYER_DIR)
+            .filter((file) => file.toLowerCase().endsWith('.json'))
+            .sort((a, b) => b.localeCompare(a))
+            .slice(0, 100)
+            .map((file) => {
+                const filePath = path.join(APPSFLYER_DIR, file);
+                const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                return {
+                    fileName: file,
+                    createdAt: content.meta?.createdAt || '-',
+                    reportSince: content.meta?.reportSince || '-',
+                    reportUntil: content.meta?.reportUntil || '-',
+                    rowCount: content.summary?.rowCount || 0,
+                    totalCost: content.summary?.totalCost || 0,
+                    totalInstalls: content.summary?.totalInstalls || 0
+                };
+            });
+
+        return res.json({ files });
+    } catch (error) {
+        return res.status(500).json({
+            error: '讀取 Appsflyer 建檔清單失敗',
+            details: error.message
+        });
+    }
+});
+
+app.get('/api/appsflyer/insights', (req, res) => {
+    try {
+        const { datePreset, since, until } = req.query;
+
+        if ((since && !until) || (!since && until)) {
+            return res.status(400).json({
+                error: '請同時提供 since 與 until，或僅使用 datePreset。'
+            });
+        }
+
+        if (since && until) {
+            if (!isValidDateFormat(since) || !isValidDateFormat(until)) {
+                return res.status(400).json({
+                    error: '日期格式需為 YYYY-MM-DD。'
+                });
+            }
+        }
+
+        const result = buildAppsflyerInsights({
+            datePreset: String(datePreset || 'last_7d'),
+            since: String(since || ''),
+            until: String(until || '')
+        });
+
+        return res.json({
+            data: result.rows,
+            meta: {
+                totalFileCount: result.totalFileCount,
+                matchedFileCount: result.matchedFileCount
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({
+            error: '查詢 Appsflyer 失敗',
             details: error.message
         });
     }

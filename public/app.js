@@ -293,7 +293,8 @@ function detectCategory(row, name, source) {
   }
 
   const text = String(name || '').toLowerCase();
-  if (text.includes('android') || text.includes('aos') || text.includes('and_')) {
+  const hasAndToken = /(^|[^a-z0-9])and([^a-z0-9]|$)/i.test(text);
+  if (text.includes('android') || text.includes('aos') || text.includes('and_') || hasAndToken) {
     return 'Android';
   }
   if (text.includes('ios') || text.includes('iphone') || text.includes('ipad') || text.includes('ios_')) {
