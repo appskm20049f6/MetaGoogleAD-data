@@ -294,7 +294,7 @@ function detectCategory(row, name, source) {
 
   const text = String(name || '').toLowerCase();
   const hasAndToken = /(^|[^a-z0-9])and([^a-z0-9]|$)/i.test(text);
-  if (text.includes('android') || text.includes('aos') || text.includes('and_') || hasAndToken) {
+  if (text.includes('android') || text.includes('aos') || text.includes('and_') || text.includes('安卓') || hasAndToken) {
     return 'Android';
   }
   if (text.includes('ios') || text.includes('iphone') || text.includes('ipad') || text.includes('ios_')) {
@@ -660,34 +660,52 @@ function buildIntegratedSheetMetrics(combinedRows) {
 
   const fbAnd = summarize('meta', 'Android');
   const fbIos = summarize('meta', 'iOS');
+  const fbWeb = summarize('meta', '網頁預約');
   const gaAnd = summarize('google', 'Android');
   const gaIos = summarize('google', 'iOS');
+  const gaWeb = summarize('google', '網頁預約');
 
   const andSpend = fbAnd.spendTwd + gaAnd.spendTwd;
   const iosSpend = fbIos.spendTwd + gaIos.spendTwd;
+  const webSpend = fbWeb.spendTwd + gaWeb.spendTwd;
   const andResults = fbAnd.results + gaAnd.results;
   const iosResults = fbIos.results + gaIos.results;
-  const totalSpend = andSpend + iosSpend;
-  const totalResults = andResults + iosResults;
+  const webResults = fbWeb.results + gaWeb.results;
+  const excludedRows = combinedRows.filter((row) => row.os !== 'Android' && row.os !== 'iOS' && row.os !== '網頁預約');
+  const excludedSpend = excludedRows.reduce((sum, row) => sum + toTwd(row.spendUsd), 0);
+  const excludedResults = excludedRows.reduce((sum, row) => sum + row.results, 0);
+  const totalSpend = andSpend + iosSpend + webSpend + excludedSpend;
+  const totalResults = andResults + iosResults + webResults + excludedResults;
   const andCpa = andResults > 0 ? andSpend / andResults : null;
   const iosCpa = iosResults > 0 ? iosSpend / iosResults : null;
+  const webCpa = webResults > 0 ? webSpend / webResults : null;
   const totalCpa = totalResults > 0 ? totalSpend / totalResults : null;
 
   return {
     rangeText,
     fbAnd,
     fbIos,
+    fbWeb,
     gaAnd,
     gaIos,
+    gaWeb,
     andSpend,
     iosSpend,
+    webSpend,
     totalSpend,
     andResults,
     iosResults,
+    webResults,
     totalResults,
     andCpa,
     iosCpa,
-    totalCpa
+    webCpa,
+    totalCpa,
+    sourceRowCount: combinedRows.length,
+    includedRowCount: combinedRows.length - excludedRows.length,
+    excludedRowCount: excludedRows.length,
+    excludedSpend,
+    excludedResults
   };
 }
 
@@ -700,6 +718,7 @@ function renderIntegratedSheetTables(metrics) {
       <td>花費</td>
       <td>${amountText(metrics.fbAnd.spendTwd)}</td>
       <td>${amountText(metrics.fbIos.spendTwd)}</td>
+      <td>${amountText(metrics.fbWeb.spendTwd)}</td>
       <td>${amountText(metrics.gaAnd.spendTwd)}</td>
       <td>${amountText(metrics.gaIos.spendTwd)}</td>
     </tr>
@@ -707,6 +726,7 @@ function renderIntegratedSheetTables(metrics) {
       <td>人數(AF)</td>
       <td>${nf.format(metrics.fbAnd.results)}</td>
       <td>${nf.format(metrics.fbIos.results)}</td>
+      <td>${nf.format(metrics.fbWeb.results)}</td>
       <td>${nf.format(metrics.gaAnd.results)}</td>
       <td>${nf.format(metrics.gaIos.results)}</td>
     </tr>
@@ -714,6 +734,7 @@ function renderIntegratedSheetTables(metrics) {
       <td>成本</td>
       <td>${cpaText(metrics.fbAnd.cpa)}</td>
       <td>${cpaText(metrics.fbIos.cpa)}</td>
+      <td>${cpaText(metrics.fbWeb.cpa)}</td>
       <td>${cpaText(metrics.gaAnd.cpa)}</td>
       <td>${cpaText(metrics.gaIos.cpa)}</td>
     </tr>
@@ -724,18 +745,21 @@ function renderIntegratedSheetTables(metrics) {
       <td>花費</td>
       <td>${amountText(metrics.andSpend)}</td>
       <td>${amountText(metrics.iosSpend)}</td>
+      <td>${amountText(metrics.webSpend)}</td>
       <td>${amountText(metrics.totalSpend)}</td>
     </tr>
     <tr>
       <td>總人數</td>
       <td>${nf.format(metrics.andResults)}</td>
       <td>${nf.format(metrics.iosResults)}</td>
+      <td>${nf.format(metrics.webResults)}</td>
       <td>${nf.format(metrics.totalResults)}</td>
     </tr>
     <tr>
       <td>成本</td>
       <td>${cpaText(metrics.andCpa)}</td>
       <td>${cpaText(metrics.iosCpa)}</td>
+      <td>${cpaText(metrics.webCpa)}</td>
       <td>${cpaText(metrics.totalCpa)}</td>
     </tr>
   `;
@@ -758,6 +782,7 @@ function renderIntegratedSheetSnapshots() {
     const metrics = snapshot.metrics || {};
     const fbAnd = metrics.fbAnd || { spendTwd: 0, results: 0, cpa: null };
     const fbIos = metrics.fbIos || { spendTwd: 0, results: 0, cpa: null };
+    const fbWeb = metrics.fbWeb || { spendTwd: 0, results: 0, cpa: null };
     const gaAnd = metrics.gaAnd || { spendTwd: 0, results: 0, cpa: null };
     const gaIos = metrics.gaIos || { spendTwd: 0, results: 0, cpa: null };
     const title = escapeHtml(snapshot.title || metrics.rangeText || '-');
@@ -780,6 +805,7 @@ function renderIntegratedSheetSnapshots() {
                 <th></th>
                 <th>FB AND</th>
                 <th>FB iOS</th>
+                <th>FB WEB</th>
                 <th>GA AND</th>
                 <th>GA iOS</th>
               </tr>
@@ -789,6 +815,7 @@ function renderIntegratedSheetSnapshots() {
                 <td>花費</td>
                 <td>${amountText(fbAnd.spendTwd)}</td>
                 <td>${amountText(fbIos.spendTwd)}</td>
+                <td>${amountText(fbWeb.spendTwd)}</td>
                 <td>${amountText(gaAnd.spendTwd)}</td>
                 <td>${amountText(gaIos.spendTwd)}</td>
               </tr>
@@ -796,6 +823,7 @@ function renderIntegratedSheetSnapshots() {
                 <td>人數</td>
                 <td>${nf.format(fbAnd.results)}</td>
                 <td>${nf.format(fbIos.results)}</td>
+                <td>${nf.format(fbWeb.results)}</td>
                 <td>${nf.format(gaAnd.results)}</td>
                 <td>${nf.format(gaIos.results)}</td>
               </tr>
@@ -803,6 +831,7 @@ function renderIntegratedSheetSnapshots() {
                 <td>成本</td>
                 <td>${cpaText(fbAnd.cpa)}</td>
                 <td>${cpaText(fbIos.cpa)}</td>
+                <td>${cpaText(fbWeb.cpa)}</td>
                 <td>${cpaText(gaAnd.cpa)}</td>
                 <td>${cpaText(gaIos.cpa)}</td>
               </tr>
@@ -877,7 +906,13 @@ function renderIntegratedSheetView() {
 
   integratedSheetSourceWrapEl.hidden = false;
   integratedSheetSummaryWrapEl.hidden = false;
-  setIntegratedSheetStatus('整合頁2已建立 FB/GA 與 AND/iOS 成本對照。');
+  if (metrics.includedRowCount === 0 && metrics.sourceRowCount > 0) {
+    setIntegratedSheetStatus('已有查詢資料；目前都屬於未分類，已先納入「總計」，AND/iOS/網頁預約 欄位會是 0。');
+  } else if (metrics.excludedRowCount > 0) {
+    setIntegratedSheetStatus(`整合頁2已建立 FB/GA 與 AND/iOS/網頁預約 成本對照（另有 ${nf.format(metrics.excludedRowCount)} 筆未納入；花費 ${nf.format(Math.round(metrics.excludedSpend))}，成果 ${nf.format(metrics.excludedResults)}）。`);
+  } else {
+    setIntegratedSheetStatus('整合頁2已建立 FB/GA 與 AND/iOS/網頁預約 成本對照。');
+  }
   renderIntegratedSheetSnapshots();
 }
 
