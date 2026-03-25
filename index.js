@@ -28,6 +28,7 @@ const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 const ENV_FILE = path.join(__dirname, '.env');
 const DATA_DIR = path.join(__dirname, 'data');
 const APPSFLYER_DIR = path.join(DATA_DIR, 'appsflyer');
+const ACCOUNT_PRESETS_FILE = path.join(DATA_DIR, 'account-presets.json');
 
 function hasMetaConfig() {
     return Boolean(ACCESS_TOKEN && AD_ACCOUNT_ID);
@@ -75,6 +76,48 @@ function ensureDir(dirPath) {
     if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath, { recursive: true });
     }
+}
+
+function normalizeAccountPresetsPayload(payload = {}) {
+    const selectedPlatform = payload.selectedPlatform === 'google' ? 'google' : 'meta';
+    const selectedAccountIdByPlatform = {
+        meta: String(payload.selectedAccountIdByPlatform?.meta || '').trim(),
+        google: String(payload.selectedAccountIdByPlatform?.google || '').trim()
+    };
+
+    const accounts = Array.isArray(payload.accounts)
+        ? payload.accounts
+            .map((item) => ({
+                name: String(item?.name || '').trim(),
+                accountId: String(item?.accountId || '').trim(),
+                platform: item?.platform === 'google' ? 'google' : 'meta'
+            }))
+            .filter((item) => item.name && item.accountId)
+        : [];
+
+    return {
+        selectedPlatform,
+        selectedAccountIdByPlatform,
+        accounts
+    };
+}
+
+function readAccountPresetsFile() {
+    try {
+        if (!fs.existsSync(ACCOUNT_PRESETS_FILE)) {
+            return normalizeAccountPresetsPayload({});
+        }
+        const raw = fs.readFileSync(ACCOUNT_PRESETS_FILE, 'utf8');
+        const parsed = JSON.parse(raw);
+        return normalizeAccountPresetsPayload(parsed);
+    } catch (_) {
+        return normalizeAccountPresetsPayload({});
+    }
+}
+
+function writeAccountPresetsFile(payload) {
+    ensureDir(DATA_DIR);
+    fs.writeFileSync(ACCOUNT_PRESETS_FILE, JSON.stringify(payload, null, 2), 'utf8');
 }
 
 function parseCsvText(csvText) {
@@ -939,6 +982,21 @@ app.get('/api/sheet/installs', async (req, res) => {
             error: '取得 Sheet 資料失敗',
             details: error.message
         });
+    }
+});
+
+app.get('/api/account-presets', (req, res) => {
+    const data = readAccountPresetsFile();
+    return res.json(data);
+});
+
+app.post('/api/account-presets', (req, res) => {
+    try {
+        const normalized = normalizeAccountPresetsPayload(req.body || {});
+        writeAccountPresetsFile(normalized);
+        return res.json({ ok: true, saved: normalized });
+    } catch (error) {
+        return res.status(500).json({ error: `儲存失敗：${error.message}` });
     }
 });
 

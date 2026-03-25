@@ -14,9 +14,9 @@
     <div class="tabs">
       <button id="tabMeta" class="tab-button active" type="button">Meta</button>
       <button id="tabGoogle" class="tab-button" type="button">Google</button>
+      <button id="tabIntegrated2" class="tab-button" type="button">AF數據</button>
       <button id="tabIntegrated" class="tab-button" type="button">數據統整</button>
-      <button id="tabIntegrated2" class="tab-button" type="button">投放簡表</button>
-      <button id="tabCopySheet" class="tab-button" type="button">複製報表</button>
+      <button id="tabCopySheet" class="tab-button" type="button">數據簡表</button>
     </div>
 
     <section class="panel">
@@ -40,6 +40,7 @@
         <div class="settings-actions">
           <button id="addPageBtn" type="button">新增/更新</button>
           <button id="removePageBtn" type="button">刪除</button>
+          <button id="savePresetBtn" type="button">存成程式預設</button>
         </div>
       </div>
 
@@ -109,10 +110,6 @@
           <p id="sumCtr">-</p>
         </div>
         <div class="card">
-          <h3>AF下載</h3>
-          <p id="sumResults">-</p>
-        </div>
-        <div class="card">
           <h3>CPI (TWD)</h3>
           <p id="avgCpi">-</p>
         </div>
@@ -133,7 +130,6 @@
               <th>曝光次數</th>
               <th>點擊次數</th>
               <th>CTR</th>
-              <th>AF下載</th>
               <th>CPI (TWD)</th>
               <th>花費 (TWD)</th>
             </tr>
@@ -220,16 +216,9 @@
       </div>
 
       <div id="integratedSheetPanel" class="tab-panel" hidden>
-        <div class="hint">整合頁2使用最近一次 Meta / Google 查詢結果，產生 FB/GA AND/iOS/網頁預約 成本表。</div>
+        <div class="hint">AF數據頁使用最近一次 Meta / Google 查詢結果，產生 FB/GA AND/iOS/網頁預約 成本表。</div>
         <div id="integratedSheetDate" class="hint">報表區間：-</div>
         <div id="integratedSheetStatus" class="status">請先到 Meta 與 Google 分頁各自查詢資料。</div>
-
-        <div class="sticky-toolbar">
-          <input id="integratedSheetTitle" type="text" placeholder="便利貼標題（可選，例如：2025/8/20 下午 19:00）" />
-          <button id="integratedSheetSaveBtn" type="button">加入便利貼</button>
-        </div>
-
-        <div id="integratedSheetNotes" class="sticky-notes"></div>
 
         <div class="section-title">AF 下載資料</div>
         <div class="sticky-toolbar">
@@ -275,48 +264,6 @@
               </table>
             </div>
           </div>
-          <div id="afDbMappedSection" hidden>
-            <div class="section-title" style="margin-top:16px">來源映射 (對應 FB / GA)</div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>平台</th><th>Android</th><th>iOS</th><th>小計</th></tr></thead>
-                <tbody id="afDbMappedTbody"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-title">平台拆分 (FB / GA)</div>
-        <div id="integratedSheetSourceWrap" class="table-wrap" hidden>
-          <table>
-            <thead>
-              <tr>
-                <th>指標</th>
-                <th>FB AND</th>
-                <th>FB iOS</th>
-                <th>FB 網頁預約</th>
-                <th>GA AND</th>
-                <th>GA iOS</th>
-              </tr>
-            </thead>
-            <tbody id="integratedSheetSourceTbody"></tbody>
-          </table>
-        </div>
-
-        <div class="section-title">分類與總計</div>
-        <div id="integratedSheetSummaryWrap" class="table-wrap" hidden>
-          <table>
-            <thead>
-              <tr>
-                <th>指標</th>
-                <th>AND</th>
-                <th>iOS</th>
-                <th>網頁預約</th>
-                <th>總計</th>
-              </tr>
-            </thead>
-            <tbody id="integratedSheetSummaryTbody"></tbody>
-          </table>
         </div>
       </div>
 
@@ -348,6 +295,7 @@
     </section>
   </div>
 
+  <script src="/app.af.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
