@@ -24,6 +24,7 @@ const META_APP_ID = process.env.META_APP_ID;
 const META_OAUTH_REDIRECT_URI = process.env.META_OAUTH_REDIRECT_URI;
 const META_SCOPE = process.env.META_SCOPE || 'ads_read';
 const PORT = process.env.PORT || 3000;
+const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 const ENV_FILE = path.join(__dirname, '.env');
 const DATA_DIR = path.join(__dirname, 'data');
 const APPSFLYER_DIR = path.join(DATA_DIR, 'appsflyer');
@@ -715,10 +716,23 @@ app.get('/api/google/insights', async (req, res) => {
 
         return res.json({ data });
     } catch (error) {
-        const googleError = error.response?.data?.error;
-        return res.status(500).json({
+        const responseData = error.response?.data || {};
+        const googleError = responseData.error;
+        const oauthDescription = responseData.error_description;
+
+        let details = error.message;
+        if (typeof googleError === 'string') {
+            details = oauthDescription
+                ? `${googleError}: ${oauthDescription}`
+                : googleError;
+        } else if (googleError && typeof googleError === 'object') {
+            details = `${googleError.code || ''} ${googleError.message || ''}`.trim() || error.message;
+        }
+
+        const isInvalidGrant = typeof googleError === 'string' && googleError === 'invalid_grant';
+        return res.status(isInvalidGrant ? 401 : 500).json({
             error: '抓取 Google Ads 失敗',
-            details: googleError ? `${googleError.code || ''} ${googleError.message || ''}`.trim() : error.message
+            details
         });
     }
 });
@@ -889,6 +903,40 @@ app.get('/api/appsflyer/insights', (req, res) => {
     } catch (error) {
         return res.status(500).json({
             error: '查詢 Appsflyer 失敗',
+            details: error.message
+        });
+    }
+});
+
+app.get('/api/sheet/installs', async (req, res) => {
+    try {
+        if (!APPS_SCRIPT_URL) {
+            return res.status(400).json({ error: 'APPS_SCRIPT_URL 未設定，請更新 .env。' });
+        }
+
+        const { game, startDate, endDate } = req.query;
+
+        if (game && !/^[\w\u4e00-\u9fff\-_ ]{1,50}$/.test(game)) {
+            return res.status(400).json({ error: '請提供有效的 game 參數（工作表名稱，1-50字）。' });
+        }
+        if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+            return res.status(400).json({ error: 'startDate 格式需為 YYYY-MM-DD。' });
+        }
+        if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+            return res.status(400).json({ error: 'endDate 格式需為 YYYY-MM-DD。' });
+        }
+
+        const params = new URLSearchParams();
+        if (game) params.append('game', game);
+        if (startDate) params.append('startDate', startDate);
+        if (endDate) params.append('endDate', endDate);
+
+        const url = `${APPS_SCRIPT_URL}?${params.toString()}`;
+        const response = await axios.get(url, { timeout: 20000, maxRedirects: 5 });
+        return res.json(response.data);
+    } catch (error) {
+        return res.status(500).json({
+            error: '取得 Sheet 資料失敗',
             details: error.message
         });
     }
