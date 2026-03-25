@@ -1,4 +1,4 @@
-const tabMetaEl = document.getElementById('tabMeta');
+﻿const tabMetaEl = document.getElementById('tabMeta');
 const tabGoogleEl = document.getElementById('tabGoogle');
 const tabIntegratedEl = document.getElementById('tabIntegrated');
 const tabIntegrated2El = document.getElementById('tabIntegrated2');
@@ -39,6 +39,30 @@ const integratedSheetSummaryTbodyEl = document.getElementById('integratedSheetSu
 const integratedSheetTitleEl = document.getElementById('integratedSheetTitle');
 const integratedSheetSaveBtnEl = document.getElementById('integratedSheetSaveBtn');
 const integratedSheetNotesEl = document.getElementById('integratedSheetNotes');
+const afDbGameSelectEl = document.getElementById('afDbGameSelect');
+const afDbReloadBtnEl = document.getElementById('afDbReloadBtn');
+const afDbListStatusEl = document.getElementById('afDbListStatus');
+const afDbSinceEl = document.getElementById('afDbSince');
+const afDbUntilEl = document.getElementById('afDbUntil');
+const afDbLabelEl = document.getElementById('afDbLabel');
+const afDbFetchBtnEl = document.getElementById('afDbFetchBtn');
+const afDbStatusEl = document.getElementById('afDbStatus');
+const afDbWrapEl = document.getElementById('afDbWrap');
+const afDbTbodyEl = document.getElementById('afDbTbody');
+const afDbSourceSectionEl = document.getElementById('afDbSourceSection');
+const afDbSourceTbodyEl = document.getElementById('afDbSourceTbody');
+const afDbDetailSectionEl = document.getElementById('afDbDetailSection');
+const afDbDetailTbodyEl = document.getElementById('afDbDetailTbody');
+const afDbMappedSectionEl = document.getElementById('afDbMappedSection');
+const afDbMappedTbodyEl = document.getElementById('afDbMappedTbody');
+const tabCopySheetEl = document.getElementById('tabCopySheet');
+const copySheetPanelEl = document.getElementById('copySheetPanel');
+const copySheetDateLabelEl = document.getElementById('copySheetDateLabel');
+const copySheetOfflineAndEl = document.getElementById('copySheetOfflineAnd');
+const copySheetOfflineIosEl = document.getElementById('copySheetOfflineIos');
+const copySheetStatusEl = document.getElementById('copySheetStatus');
+const copySheetTableWrapEl = document.getElementById('copySheetTableWrap');
+const copySheetCopyBtnEl = document.getElementById('copySheetCopyBtn');
 
 const sumImpressionsEl = document.getElementById('sumImpressions');
 const sumClicksEl = document.getElementById('sumClicks');
@@ -73,6 +97,8 @@ let activeTab = settings.selectedPlatform === 'google' ? 'google' : 'meta';
 let currentRows = [];
 let selectedRowIds = new Set();
 let metaAuthPopup = null;
+let afMappedMetrics = null;
+let afTotalCounts = null;
 const platformRows = {
   meta: [],
   google: []
@@ -270,9 +296,27 @@ function getAfDownload(actions) {
     }
   }
 
+  // Keep a conservative fallback to avoid counting non-install events as AF downloads.
+  const fallbackInstallTypes = [
+    'app_custom_event.install',
+    'app_custom_event.app_install',
+    'app_custom_event.mobile_app_install'
+  ];
+
   const fuzzy = actions.find((item) => {
     const actionType = String(item.action_type || '').toLowerCase();
-    return actionType.includes('install') || actionType.includes('download') || actionType.includes('af');
+    if (!actionType) {
+      return false;
+    }
+
+    if (fallbackInstallTypes.includes(actionType)) {
+      return true;
+    }
+
+    return /(^|[._])app_install($|[._])/.test(actionType)
+      || /(^|[._])mobile_app_install($|[._])/.test(actionType)
+      || /(^|[._])omni_app_install($|[._])/.test(actionType)
+      || actionType === 'app_custom_event.fb_mobile_activate_app';
   });
 
   return fuzzy ? toNumber(fuzzy.value) : 0;
@@ -650,11 +694,10 @@ function buildIntegratedSheetMetrics(combinedRows) {
   const summarize = (source, category) => {
     const matched = combinedRows.filter((row) => row.source === source && row.os === category);
     const spendUsd = matched.reduce((sum, row) => sum + row.spendUsd, 0);
-    const results = matched.reduce((sum, row) => sum + row.results, 0);
+    const adResults = matched.reduce((sum, row) => sum + row.results, 0);
     return {
       spendTwd: toTwd(spendUsd),
-      results,
-      cpa: results > 0 ? toTwd(spendUsd) / results : null
+      adResults
     };
   };
 
@@ -664,6 +707,28 @@ function buildIntegratedSheetMetrics(combinedRows) {
   const gaAnd = summarize('google', 'Android');
   const gaIos = summarize('google', 'iOS');
   const gaWeb = summarize('google', '網頁預約');
+
+  const hasAfMapped = Boolean(afMappedMetrics);
+  const fbAndResults = hasAfMapped ? Number(afMappedMetrics.fbAnd || 0) : fbAnd.adResults;
+  const fbIosResults = hasAfMapped ? Number(afMappedMetrics.fbIos || 0) : fbIos.adResults;
+  const gaAndResults = hasAfMapped ? Number(afMappedMetrics.gaAnd || 0) : gaAnd.adResults;
+  const gaIosResults = hasAfMapped ? Number(afMappedMetrics.gaIos || 0) : gaIos.adResults;
+  const fbWebResults = fbWeb.adResults;
+  const gaWebResults = gaWeb.adResults;
+
+  fbAnd.results = fbAndResults;
+  fbIos.results = fbIosResults;
+  gaAnd.results = gaAndResults;
+  gaIos.results = gaIosResults;
+  fbWeb.results = fbWebResults;
+  gaWeb.results = gaWebResults;
+
+  fbAnd.cpa = fbAnd.results > 0 ? fbAnd.spendTwd / fbAnd.results : null;
+  fbIos.cpa = fbIos.results > 0 ? fbIos.spendTwd / fbIos.results : null;
+  fbWeb.cpa = fbWeb.results > 0 ? fbWeb.spendTwd / fbWeb.results : null;
+  gaAnd.cpa = gaAnd.results > 0 ? gaAnd.spendTwd / gaAnd.results : null;
+  gaIos.cpa = gaIos.results > 0 ? gaIos.spendTwd / gaIos.results : null;
+  gaWeb.cpa = gaWeb.results > 0 ? gaWeb.spendTwd / gaWeb.results : null;
 
   const andSpend = fbAnd.spendTwd + gaAnd.spendTwd;
   const iosSpend = fbIos.spendTwd + gaIos.spendTwd;
@@ -908,6 +973,8 @@ function renderIntegratedSheetView() {
   integratedSheetSummaryWrapEl.hidden = false;
   if (metrics.includedRowCount === 0 && metrics.sourceRowCount > 0) {
     setIntegratedSheetStatus('已有查詢資料；目前都屬於未分類，已先納入「總計」，AND/iOS/網頁預約 欄位會是 0。');
+  } else if (afMappedMetrics) {
+    setIntegratedSheetStatus('投放簡表已使用 AF 下載表，並依來源(Meta/Google)與 OS(Android/iOS) 分類套用到各區塊。');
   } else if (metrics.excludedRowCount > 0) {
     setIntegratedSheetStatus(`整合頁2已建立 FB/GA 與 AND/iOS/網頁預約 成本對照（另有 ${nf.format(metrics.excludedRowCount)} 筆未納入；花費 ${nf.format(Math.round(metrics.excludedSpend))}，成果 ${nf.format(metrics.excludedResults)}）。`);
   } else {
@@ -916,6 +983,578 @@ function renderIntegratedSheetView() {
   renderIntegratedSheetSnapshots();
 }
 
+async function loadAfSheetList() {
+  afDbListStatusEl.textContent = '載入中…';
+  afDbReloadBtnEl.disabled = true;
+  try {
+    const res = await fetch('/api/sheet/installs');
+    const data = await res.json();
+    if (!data.availableSheets) {
+      afDbListStatusEl.textContent = data.error || '無法取得清單';
+      return;
+    }
+    const current = afDbGameSelectEl.value;
+    afDbGameSelectEl.innerHTML = '<option value="">— 請選擇 —</option>' +
+      data.availableSheets.map((s) =>
+        `<option value="${s}"${s === current ? ' selected' : ''}>${s}</option>`
+      ).join('');
+    afDbListStatusEl.textContent = `共 ${data.availableSheets.length} 個工作表`;
+  } catch (e) {
+    afDbListStatusEl.textContent = `失敗：${e.message}`;
+  } finally {
+    afDbReloadBtnEl.disabled = false;
+  }
+}
+
+function getProjectKeyFromSheetName(sheetName) {
+  return String(sheetName || '')
+    .replace(/[_\-\s]?(android|aos|ios)$/i, '')
+    .trim();
+}
+
+function resolveCompanionSheets(selectedSheet, allSheets) {
+  const current = String(selectedSheet || '').trim();
+  if (!current) {
+    return [];
+  }
+
+  const rows = Array.isArray(allSheets) ? allSheets.filter(Boolean) : [];
+  const lowerRows = rows.map((name) => String(name).toLowerCase());
+  const addUnique = (arr, value) => {
+    if (value && !arr.includes(value)) arr.push(value);
+  };
+
+  const result = [];
+  addUnique(result, current);
+
+  const toMatch = current.match(/^(.*?)([_\-\s]?)(android|aos|ios)$/i);
+  if (!toMatch) {
+    return result;
+  }
+
+  const prefix = toMatch[1];
+  const connector = toMatch[2] || '_';
+  const suffix = toMatch[3].toLowerCase();
+  const targetSuffix = suffix === 'ios' ? 'android' : 'ios';
+  const candidate = `${prefix}${connector}${targetSuffix}`.toLowerCase();
+  const foundIdx = lowerRows.findIndex((name) => name === candidate);
+  if (foundIdx >= 0) {
+    addUnique(result, rows[foundIdx]);
+  }
+
+  // 額外兼容 Android <-> AOS 的命名差異
+  if (targetSuffix === 'android') {
+    const aosCandidate = `${prefix}${connector}aos`.toLowerCase();
+    const aosIdx = lowerRows.findIndex((name) => name === aosCandidate);
+    if (aosIdx >= 0) {
+      addUnique(result, rows[aosIdx]);
+    }
+  }
+
+  return result;
+}
+
+function detectSheetOs(sheetName) {
+  const text = String(sheetName || '').toLowerCase();
+  if (text.includes('android') || text.includes('aos') || text.includes('安卓')) {
+    return 'android';
+  }
+  if (text.includes('ios') || text.includes('iphone') || text.includes('ipad')) {
+    return 'ios';
+  }
+  return '';
+}
+
+function normalizeAfDetailOs(value, sheetName) {
+  const text = String(value || '').trim().toLowerCase();
+  if (text.includes('android') || text.includes('aos') || text.includes('google play') || text.includes('安卓')) {
+    return 'Android';
+  }
+  if (text.includes('ios') || text.includes('iphone') || text.includes('ipad') || text.includes('apple')) {
+    return 'iOS';
+  }
+
+  const fallback = detectSheetOs(sheetName);
+  if (fallback === 'android') {
+    return 'Android';
+  }
+  if (fallback === 'ios') {
+    return 'iOS';
+  }
+  return 'N/A';
+}
+
+function normalizeAfEventType(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) {
+    return 'install';
+  }
+  if (text === 'reattribution' || text === 're_attribution') {
+    return 're-attribution';
+  }
+  return text;
+}
+
+function isPaidMediaEventType(eventType) {
+  const normalized = normalizeAfEventType(eventType);
+  return normalized === 'install' || normalized === 're-attribution';
+}
+
+function collectAfDetailRows(data, sheetName) {
+  const rawRows = Array.isArray(data.details)
+    ? data.details
+    : Array.isArray(data.rows)
+      ? data.rows
+      : Array.isArray(data.records)
+        ? data.records
+        : [];
+
+  const grouped = new Map();
+  rawRows.forEach((item) => {
+    const eventType = normalizeAfEventType(item?.eventType || item?.type || item?.installType || item?.conversionType || item?.actionType);
+    const mediaSource = String(item?.mediaSource || item?.source || item?.media || item?.media_source || 'N/A').trim() || 'N/A';
+    const rawCampaign = String(item?.campaign || item?.campaignName || item?.campaign_name || item?.name || item?.label || '').trim();
+    const sourceName = /^(restricted|organic)$/i.test(mediaSource) ? 'N/A' : (rawCampaign || 'N/A');
+    const os = normalizeAfDetailOs(item?.os || item?.platform || item?.deviceOs || item?.store, sheetName);
+    const count = Number(item?.count || item?.total || item?.value || 1);
+
+    if (!Number.isFinite(count) || count <= 0) {
+      return;
+    }
+
+    const key = [eventType, mediaSource, sourceName, os].join('|');
+    const current = grouped.get(key) || {
+      eventType,
+      mediaSource,
+      sourceName,
+      os,
+      count: 0
+    };
+
+    current.count += count;
+    grouped.set(key, current);
+  });
+
+  return Array.from(grouped.values()).sort((left, right) => {
+    if (left.mediaSource !== right.mediaSource) {
+      return left.mediaSource.localeCompare(right.mediaSource, 'zh-Hant');
+    }
+    if (left.sourceName !== right.sourceName) {
+      return left.sourceName.localeCompare(right.sourceName, 'zh-Hant');
+    }
+    if (left.eventType !== right.eventType) {
+      return left.eventType.localeCompare(right.eventType, 'zh-Hant');
+    }
+    return left.os.localeCompare(right.os, 'zh-Hant');
+  });
+}
+
+function normalizeSheetPayload(data, sheetName) {
+  const detailRows = collectAfDetailRows(data, sheetName);
+  const payload = {
+    total: Number(data.total || 0),
+    organic: Number(data.organic || 0),
+    nonOrganic: Number(data.nonOrganic || 0),
+    android: {
+      total: Number(data.android?.total || 0),
+      organic: Number(data.android?.organic || 0),
+      nonOrganic: Number(data.android?.nonOrganic || 0)
+    },
+    ios: {
+      total: Number(data.ios?.total || 0),
+      organic: Number(data.ios?.organic || 0),
+      nonOrganic: Number(data.ios?.nonOrganic || 0)
+    },
+    bySource: Object.fromEntries(Object.entries(data.bySource || {}).map(([k, v]) => [k, {
+      total: Number(v?.total || 0),
+      android: Number(v?.android || 0),
+      ios: Number(v?.ios || 0)
+    }])),
+    detailRows
+  };
+
+  const os = detectSheetOs(sheetName);
+  const osEmpty = payload.android.total === 0 && payload.ios.total === 0;
+  if (payload.total > 0 && os && osEmpty) {
+    payload[os].total = payload.total;
+    payload[os].organic = payload.organic;
+    payload[os].nonOrganic = payload.nonOrganic;
+    Object.values(payload.bySource).forEach((item) => {
+      if (item.android === 0 && item.ios === 0 && item.total > 0) {
+        item[os] = item.total;
+      }
+    });
+  }
+
+  return payload;
+}
+
+function mergeSheetPayloads(payloads) {
+  const merged = {
+    total: 0,
+    organic: 0,
+    nonOrganic: 0,
+    android: { total: 0, organic: 0, nonOrganic: 0 },
+    ios: { total: 0, organic: 0, nonOrganic: 0 },
+    bySource: {},
+    detailRows: []
+  };
+
+  payloads.forEach((data) => {
+    merged.total += Number(data.total || 0);
+    merged.organic += Number(data.organic || 0);
+    merged.nonOrganic += Number(data.nonOrganic || 0);
+    merged.android.total += Number(data.android?.total || 0);
+    merged.android.organic += Number(data.android?.organic || 0);
+    merged.android.nonOrganic += Number(data.android?.nonOrganic || 0);
+    merged.ios.total += Number(data.ios?.total || 0);
+    merged.ios.organic += Number(data.ios?.organic || 0);
+    merged.ios.nonOrganic += Number(data.ios?.nonOrganic || 0);
+
+    Object.entries(data.bySource || {}).forEach(([source, info]) => {
+      if (!merged.bySource[source]) {
+        merged.bySource[source] = { total: 0, android: 0, ios: 0 };
+      }
+      merged.bySource[source].total += Number(info?.total || 0);
+      merged.bySource[source].android += Number(info?.android || 0);
+      merged.bySource[source].ios += Number(info?.ios || 0);
+    });
+
+    merged.detailRows.push(...(Array.isArray(data.detailRows) ? data.detailRows : []));
+  });
+
+  return merged;
+}
+
+function mapAfSourcesToPlatforms(mergedPayload) {
+  const mapped = { fbAnd: 0, fbIos: 0, gaAnd: 0, gaIos: 0, otherAnd: 0, otherIos: 0 };
+  const paidAnd = Math.max(0, Number(mergedPayload?.android?.nonOrganic || 0));
+  const paidIos = Math.max(0, Number(mergedPayload?.ios?.nonOrganic || 0));
+
+  let googleAnd = 0;
+
+  const detailRows = Array.isArray(mergedPayload?.detailRows) ? mergedPayload.detailRows : [];
+  if (detailRows.length) {
+    detailRows
+      .filter((row) => isPaidMediaEventType(row.eventType))
+      .forEach((row) => {
+        const key = String(row.mediaSource || '').toLowerCase();
+        const count = Number(row.count || 0);
+        if (!Number.isFinite(count) || count <= 0) {
+          return;
+        }
+        if (key.includes('google') || key.includes('adwords') || key.includes('uac')) {
+          if (row.os === 'Android') {
+            googleAnd += count;
+          }
+        }
+      });
+  } else {
+    Object.entries(mergedPayload?.bySource || {}).forEach(([source, info]) => {
+      const key = String(source || '').toLowerCase();
+      if (key.includes('google') || key.includes('adwords') || key.includes('uac')) {
+        googleAnd += Number(info?.android || 0);
+      }
+    });
+  }
+
+  // 規則：Android 的非自然量中，Google 留給 GA，其餘全部視為 Meta。
+  // 規則：iOS 的非自然量全部視為媒體量，先歸入 Meta(iOS) 欄。
+  mapped.gaAnd = Math.min(paidAnd, Math.max(0, Math.round(googleAnd)));
+  mapped.fbAnd = Math.max(0, paidAnd - mapped.gaAnd);
+  mapped.fbIos = Math.max(0, paidIos);
+  mapped.gaIos = 0;
+
+  return mapped;
+}
+
+async function fetchAfSheetData() {
+  const game = afDbGameSelectEl.value;
+  if (!game) {
+    afDbStatusEl.textContent = '請先選擇工作表';
+    return;
+  }
+
+  afDbStatusEl.textContent = '抓取中…';
+  afDbFetchBtnEl.disabled = true;
+
+  const startDate = afDbSinceEl.value;
+  const endDate = afDbUntilEl.value;
+  const label = afDbLabelEl.value.trim() || game;
+
+  try {
+    const allSheets = Array.from(afDbGameSelectEl.options).map((opt) => opt.value).filter(Boolean);
+    const targetSheets = resolveCompanionSheets(game, allSheets);
+
+    const payloads = await Promise.all(targetSheets.map(async (sheetName) => {
+      const params = new URLSearchParams({ game: sheetName });
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
+      const res = await fetch(`/api/sheet/installs?${params}`);
+      const data = await res.json();
+      if (data.error) {
+        throw new Error(`[${sheetName}] ${data.error}`);
+      }
+      return normalizeSheetPayload(data, sheetName);
+    }));
+
+    const merged = mergeSheetPayloads(payloads);
+    afMappedMetrics = mapAfSourcesToPlatforms(merged);
+    afTotalCounts = { andTotal: merged.android.total, iosTotal: merged.ios.total };
+
+    const rangeLabel = startDate ? `${startDate} ~ ${endDate}` : '全部資料';
+    afDbStatusEl.textContent = `${label}｜${rangeLabel}｜合併 ${targetSheets.length} 張表（${targetSheets.join('、')}）`;
+    renderAfSheetResult(merged, label, rangeLabel);
+    renderIntegratedSheetView();
+    renderCopySheetView();
+  } catch (e) {
+    afMappedMetrics = null;
+      afTotalCounts = null;
+    afDbStatusEl.textContent = `請求失敗：${e.message}`;
+  } finally {
+    afDbFetchBtnEl.disabled = false;
+  }
+}
+
+function renderAfSheetResult(data, label, rangeLabel) {
+  afDbWrapEl.hidden = false;
+  const headingEl = afDbWrapEl.querySelector('.af-result-heading');
+  const headingText = label ? `${label}　${rangeLabel || ''}` : (rangeLabel || '');
+  if (headingEl) {
+    headingEl.textContent = headingText;
+  } else {
+    const div = document.createElement('div');
+    div.className = 'af-result-heading hint';
+    div.style.cssText = 'margin-bottom:6px;font-weight:600;';
+    div.textContent = headingText;
+    afDbWrapEl.insertBefore(div, afDbWrapEl.firstChild);
+  }
+  afDbTbodyEl.innerHTML = `
+    <tr><td>自然量 (Organic)</td><td>${data.organic}</td><td>${data.android?.organic ?? '-'}</td><td>${data.ios?.organic ?? '-'}</td></tr>
+    <tr><td>付費量 (Non-organic)</td><td>${data.nonOrganic}</td><td>${data.android?.nonOrganic ?? '-'}</td><td>${data.ios?.nonOrganic ?? '-'}</td></tr>
+    <tr><td><strong>總下載</strong></td><td><strong>${data.total}</strong></td><td><strong>${data.android?.total ?? '-'}</strong></td><td><strong>${data.ios?.total ?? '-'}</strong></td></tr>
+  `;
+
+  const sources = Object.entries(data.bySource || {});
+  if (sources.length > 0) {
+    afDbSourceSectionEl.hidden = false;
+    afDbSourceTbodyEl.innerHTML = sources
+      .sort((a, b) => b[1].total - a[1].total)
+      .map(([source, info]) =>
+        `<tr><td>${source}</td><td>${info.total}</td><td>${info.android}</td><td>${info.ios}</td></tr>`
+      ).join('');
+  } else {
+    afDbSourceSectionEl.hidden = true;
+  }
+
+  if (Array.isArray(data.detailRows) && data.detailRows.length > 0) {
+    afDbDetailSectionEl.hidden = false;
+    afDbDetailTbodyEl.innerHTML = data.detailRows
+      .map((row) => `
+        <tr>
+          <td>${row.eventType}</td>
+          <td>${row.mediaSource}</td>
+          <td>${row.sourceName}</td>
+          <td>${row.os}</td>
+          <td>${row.count}</td>
+        </tr>
+      `)
+      .join('');
+  } else {
+    afDbDetailSectionEl.hidden = true;
+  }
+
+  if (afMappedMetrics) {
+    afDbMappedSectionEl.hidden = false;
+    const fbTotal = afMappedMetrics.fbAnd + afMappedMetrics.fbIos;
+    const gaTotal = afMappedMetrics.gaAnd + afMappedMetrics.gaIos;
+    const otherTotal = afMappedMetrics.otherAnd + afMappedMetrics.otherIos;
+    afDbMappedTbodyEl.innerHTML = `
+      <tr><td>Meta</td><td>${afMappedMetrics.fbAnd}</td><td>${afMappedMetrics.fbIos}</td><td>${fbTotal}</td></tr>
+      <tr><td>Google</td><td>${afMappedMetrics.gaAnd}</td><td>${afMappedMetrics.gaIos}</td><td>${gaTotal}</td></tr>
+      <tr><td>其他</td><td>${afMappedMetrics.otherAnd}</td><td>${afMappedMetrics.otherIos}</td><td>${otherTotal}</td></tr>
+    `;
+  } else {
+    afDbMappedSectionEl.hidden = true;
+  }
+}
+
+function tableToTsv(tableEl) {
+  const rows = Array.from(tableEl.querySelectorAll('tr'));
+  return rows.map((tr) => {
+    const cells = Array.from(tr.querySelectorAll('td'));
+    return cells.map((cell) => {
+      const text = cell.textContent.trim().replace(/\t|\n/g, ' ');
+      const span = parseInt(cell.getAttribute('colspan') || '1', 10);
+      return [text, ...Array(span - 1).fill('')].join('\t');
+    }).join('\t');
+  }).join('\n');
+}
+
+async function copyTableToClipboard(tableEl) {
+  if (!tableEl) return false;
+  const tsv = tableToTsv(tableEl);
+  const htmlStr = `<meta charset="utf-8">${tableEl.outerHTML}`;
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([htmlStr], { type: 'text/html' }),
+        'text/plain': new Blob([tsv], { type: 'text/plain' })
+      })
+    ]);
+    return true;
+  } catch (_) {
+    try {
+      await navigator.clipboard.writeText(tsv);
+      return true;
+    } catch (_2) {
+      return false;
+    }
+  }
+}
+
+function renderCopySheetView() {
+  const combinedRows = [...platformRows.meta, ...platformRows.google];
+  const metrics = buildIntegratedSheetMetrics(combinedRows);
+
+  if (!metrics) {
+    copySheetStatusEl.textContent = '請先到 Meta 與 Google 分頁各自查詢資料。';
+    copySheetTableWrapEl.innerHTML = '';
+    return;
+  }
+
+  if (!afMappedMetrics) {
+    copySheetStatusEl.textContent = '⚠ 尚未載入 AF 下載資料，人數與成本欄位顯示「-」。請先到「投放簡表」頁面抓取 AF 下載數。';
+  } else {
+    const andT = afTotalCounts?.andTotal ?? 0;
+    const iosT = afTotalCounts?.iosTotal ?? 0;
+    copySheetStatusEl.textContent = `AF 資料已載入　Android 總下載：${nf.format(andT)}　iOS 總下載：${nf.format(iosT)}（上表人數已含自然量 + 付費量）`;
+  }
+
+  const offAnd = Math.max(0, Number(copySheetOfflineAndEl.value) || 0);
+  const rawOffIos = copySheetOfflineIosEl.value.trim();
+  const offIos = rawOffIos === '' ? null : Math.max(0, Number(rawOffIos) || 0);
+  const offIosNum = offIos !== null ? offIos : 0;
+  const dateLabel = copySheetDateLabelEl.value.trim() || metrics.rangeText;
+
+  const fmtVal = (val) => {
+    if (val === null || val === undefined) return '-';
+    if (typeof val === 'number' && !isFinite(val)) return '-';
+    return nf.format(Math.round(val));
+  };
+
+  const hasAfCounts = Boolean(afMappedMetrics && afTotalCounts);
+  const gaAndBase = hasAfCounts ? Number(afMappedMetrics.gaAnd || 0) : 0;
+  const gaIosBase = hasAfCounts ? Number(afMappedMetrics.gaIos || 0) : 0;
+  const gaAndRes = hasAfCounts ? Math.max(0, Math.min(Number(afTotalCounts.andTotal || 0), gaAndBase)) : null;
+  const gaIosRes = hasAfCounts ? Math.max(0, Math.min(Number(afTotalCounts.iosTotal || 0), gaIosBase)) : null;
+  const fbAndRes = hasAfCounts ? Math.max(0, Number(afTotalCounts.andTotal || 0) - gaAndRes) : null;
+  const fbIosRes = hasAfCounts ? Math.max(0, Number(afTotalCounts.iosTotal || 0) - gaIosRes) : null;
+
+  const safeCpa = (spend, results) => (results ? spend / results : null);
+  const fbAndCpa = safeCpa(metrics.fbAnd.spendTwd, fbAndRes);
+  const fbIosCpa = safeCpa(metrics.fbIos.spendTwd, fbIosRes);
+  const gaAndCpa = safeCpa(metrics.gaAnd.spendTwd, gaAndRes);
+  const gaIosCpa = safeCpa(metrics.gaIos.spendTwd, gaIosRes);
+
+  const andTotalInstalls = hasAfCounts ? (fbAndRes + gaAndRes) : null;
+  const iosTotalInstalls = hasAfCounts ? (fbIosRes + gaIosRes) : null;
+  const andPlatformCpa = safeCpa(metrics.andSpend, andTotalInstalls);
+  const iosPlatformCpa = safeCpa(metrics.iosSpend, iosTotalInstalls);
+
+  const grandTotalSpend = metrics.andSpend + metrics.iosSpend + offAnd + offIosNum;
+  const grandTotalResults = (andTotalInstalls ?? 0) + (iosTotalInstalls ?? 0);
+  const grandTotalCpa = grandTotalResults > 0 ? grandTotalSpend / grandTotalResults : null;
+
+  const S = {
+    hdr:     'background:#ddb83a;color:#2d2200;font-weight:800;text-align:center;border:1px solid #b09450;padding:5px 13px;white-space:nowrap;',
+    sub:     'background:#f0d060;color:#2d2200;font-weight:700;text-align:center;border:1px solid #b09450;padding:5px 13px;white-space:nowrap;',
+    lbl:     'background:#f5edbc;font-weight:600;text-align:center;min-width:80px;border:1px solid #b09450;padding:5px 13px;white-space:nowrap;',
+    corner:  'background:#f0e8cc;border:1px solid #b09450;padding:5px 13px;',
+    data:    'background:#fffef4;min-width:75px;text-align:center;border:1px solid #b09450;padding:5px 13px;white-space:nowrap;',
+    totLbl:  'background:#fef3b0;font-weight:700;text-align:center;border:1px solid #b09450;padding:5px 13px;white-space:nowrap;',
+    totData: 'background:#fef3b0;font-weight:700;text-align:center;border:1px solid #b09450;padding:5px 13px;white-space:nowrap;',
+    totEmp:  'background:#d8d6cc;border:1px solid #b09450;padding:5px 13px;',
+  };
+
+  copySheetTableWrapEl.innerHTML = `
+    <table id="excelMergedTable" style="border-collapse:collapse;font-size:0.875rem;">
+      <tbody>
+        <tr>
+          <td rowspan="2" style="${S.hdr}">${escapeHtml(dateLabel)}</td>
+          <td colspan="2" style="${S.hdr}">FB</td>
+          <td colspan="2" style="${S.hdr}">GA</td>
+        </tr>
+        <tr>
+          <td style="${S.sub}">AND</td>
+          <td style="${S.sub}">IOS</td>
+          <td style="${S.sub}">AND</td>
+          <td style="${S.sub}">IOS</td>
+        </tr>
+        <tr>
+          <td style="${S.lbl}">花費</td>
+          <td style="${S.data}">${fmtVal(metrics.fbAnd.spendTwd)}</td>
+          <td style="${S.data}">${fmtVal(metrics.fbIos.spendTwd)}</td>
+          <td style="${S.data}">${fmtVal(metrics.gaAnd.spendTwd)}</td>
+          <td style="${S.data}">${fmtVal(metrics.gaIos.spendTwd)}</td>
+        </tr>
+        <tr>
+          <td style="${S.lbl}">人數(AF)</td>
+          <td style="${S.data}">${fmtVal(fbAndRes)}</td>
+          <td style="${S.data}">${fmtVal(fbIosRes)}</td>
+          <td style="${S.data}">${fmtVal(gaAndRes)}</td>
+          <td style="${S.data}">${fmtVal(gaIosRes)}</td>
+        </tr>
+        <tr>
+          <td style="${S.lbl}">成本</td>
+          <td style="${S.data}">${fmtVal(fbAndCpa)}</td>
+          <td style="${S.data}">${fmtVal(fbIosCpa)}</td>
+          <td style="${S.data}">${fmtVal(gaAndCpa)}</td>
+          <td style="${S.data}">${fmtVal(gaIosCpa)}</td>
+        </tr>
+        <tr>
+          <td style="${S.corner}"></td>
+          <td colspan="2" style="${S.sub}">AND</td>
+          <td colspan="2" style="${S.sub}">IOS</td>
+        </tr>
+        <tr>
+          <td style="${S.lbl}">花費</td>
+          <td colspan="2" style="${S.data}">${fmtVal(metrics.andSpend)}</td>
+          <td colspan="2" style="${S.data}">${fmtVal(metrics.iosSpend)}</td>
+        </tr>
+        <tr>
+          <td style="${S.lbl}">總人數</td>
+          <td colspan="2" style="${S.data}">${fmtVal(andTotalInstalls)}</td>
+          <td colspan="2" style="${S.data}">${fmtVal(iosTotalInstalls)}</td>
+        </tr>
+        <tr>
+          <td style="${S.lbl}">平台成本</td>
+          <td colspan="2" style="${S.data}">${fmtVal(andPlatformCpa)}</td>
+          <td colspan="2" style="${S.data}">${fmtVal(iosPlatformCpa)}</td>
+        </tr>
+        <tr>
+          <td style="${S.lbl}">線下花費</td>
+          <td colspan="2" style="${S.data}">${fmtVal(offAnd)}</td>
+          <td colspan="2" style="${S.data}">${offIos !== null ? fmtVal(offIos) : ''}</td>
+        </tr>
+        <tr>
+          <td style="${S.totLbl}">總花費</td>
+          <td colspan="4" style="${S.totData}">${fmtVal(grandTotalSpend)}</td>
+        </tr>
+        <tr>
+          <td style="${S.totLbl}">總人數</td>
+          <td colspan="4" style="${S.totData}">${grandTotalResults > 0 ? nf.format(grandTotalResults) : '-'}</td>
+        </tr>
+        <tr>
+          <td style="${S.totLbl}">總成本</td>
+          <td colspan="4" style="${S.totData}">${fmtVal(grandTotalCpa)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+
 function setActiveTab(tab) {
   activeTab = tab;
 
@@ -923,18 +1562,36 @@ function setActiveTab(tab) {
   tabGoogleEl.classList.toggle('active', tab === 'google');
   tabIntegratedEl.classList.toggle('active', tab === 'integrated');
   tabIntegrated2El.classList.toggle('active', tab === 'integrated2');
+  tabCopySheetEl.classList.toggle('active', tab === 'copySheet');
 
-  queryPanelEl.hidden = tab === 'integrated' || tab === 'integrated2';
+  queryPanelEl.hidden = tab === 'integrated' || tab === 'integrated2' || tab === 'copySheet';
   integratedPanelEl.hidden = tab !== 'integrated';
   integratedSheetPanelEl.hidden = tab !== 'integrated2';
+  copySheetPanelEl.hidden = tab !== 'copySheet';
 
   if (tab === 'integrated') {
     renderIntegratedView();
     return;
   }
 
+  if (tab === 'copySheet') {
+    renderCopySheetView();
+    return;
+  }
+
   if (tab === 'integrated2') {
     renderIntegratedSheetView();
+    if (!afDbSinceEl.value) {
+      const combinedRows2 = [...platformRows.meta, ...platformRows.google];
+      const sheetMetrics = buildIntegratedSheetMetrics(combinedRows2);
+      if (sheetMetrics) {
+        const match = sheetMetrics.rangeText.match(/(\d{4}-\d{2}-\d{2}) ~ (\d{4}-\d{2}-\d{2})/);
+        if (match) { afDbSinceEl.value = match[1]; afDbUntilEl.value = match[2]; }
+      }
+    }
+    if (afDbGameSelectEl.options.length <= 1) {
+      loadAfSheetList();
+    }
     return;
   }
 
@@ -1016,6 +1673,10 @@ async function queryData() {
     selectedRowIds = new Set(currentRows.map((row) => row.id));
     renderTable();
     renderIntegratedView();
+    copySheetDateLabelEl.value = new Date().toLocaleString('zh-TW', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).replace(/\//g, '/').replace(',', '');
     setStatus(`${getPlatformText(platform)} 查詢完成，共 ${rows.length} 筆。可用勾選框加總上方數據。`);
   } catch (error) {
     setStatus(error.message || '查詢發生錯誤。', true);
@@ -1030,7 +1691,19 @@ tabMetaEl.addEventListener('click', () => setActiveTab('meta'));
 tabGoogleEl.addEventListener('click', () => setActiveTab('google'));
 tabIntegratedEl.addEventListener('click', () => setActiveTab('integrated'));
 tabIntegrated2El.addEventListener('click', () => setActiveTab('integrated2'));
+tabCopySheetEl.addEventListener('click', () => setActiveTab('copySheet'));
+copySheetCopyBtnEl.addEventListener('click', async () => {
+  const tableEl = document.getElementById('excelMergedTable');
+  const ok = await copyTableToClipboard(tableEl);
+  copySheetStatusEl.textContent = ok ? '✓ 報表已複製，可直接貼到 Excel！' : '複製失敗，請手動選取表格。';
+  if (ok) setTimeout(() => { copySheetStatusEl.textContent = ''; }, 3000);
+});
+copySheetOfflineAndEl.addEventListener('input', renderCopySheetView);
+copySheetOfflineIosEl.addEventListener('input', renderCopySheetView);
+copySheetDateLabelEl.addEventListener('input', renderCopySheetView);
 integratedSheetSaveBtnEl.addEventListener('click', saveIntegratedSheetSnapshot);
+afDbReloadBtnEl.addEventListener('click', loadAfSheetList);
+afDbFetchBtnEl.addEventListener('click', fetchAfSheetData);
 integratedSheetNotesEl.addEventListener('click', (event) => {
   const deleteBtn = event.target.closest('.sticky-note-delete');
   if (!deleteBtn) {

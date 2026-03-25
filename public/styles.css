@@ -416,3 +416,114 @@ tr:hover td {
   }
 
 }
+
+/* ── 複製報表 ─────────────────────────────────────────────── */
+.copy-sheet-controls {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.copy-sheet-controls > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.copy-sheet-controls input {
+  width: 140px;
+}
+
+.copy-btn {
+  width: auto;
+  padding: 8px 18px;
+  font-size: 0.84rem;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.excel-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 6px;
+}
+
+.excel-section-head .section-title {
+  margin: 0;
+}
+
+.excel-table-wrap {
+  overflow-x: auto;
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* Excel 風格表格 */
+.excel-report {
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  table-layout: auto;
+}
+
+.excel-report td {
+  border: 1px solid #b09450;
+  padding: 5px 13px;
+  text-align: center;
+  white-space: nowrap;
+  background: #fffef4;
+  position: static;
+}
+
+.er-date-header {
+  background: #ddb83a !important;
+  font-weight: 800;
+  color: #2d2200;
+  text-align: center;
+  min-width: 100px;
+}
+
+.er-platform-header {
+  background: #ddb83a !important;
+  font-weight: 800;
+  color: #2d2200;
+  text-align: center;
+}
+
+.er-sub-header {
+  background: #f0d060 !important;
+  font-weight: 700;
+  color: #2d2200;
+  text-align: center;
+}
+
+.er-empty-corner {
+  background: #f0e8cc !important;
+}
+
+.er-row-label {
+  background: #f5edbc !important;
+  font-weight: 600;
+  text-align: left;
+  min-width: 80px;
+}
+
+.er-data {
+  min-width: 75px;
+  text-align: right;
+}
+
+.er-empty {
+  background: #e0ddd5 !important;
+}
+
+.er-total-row td {
+  background: #fef3b0 !important;
+  font-weight: 700;
+}
+
+.er-total-row .er-empty {
+  background: #d8d6cc !important;
+}
+
