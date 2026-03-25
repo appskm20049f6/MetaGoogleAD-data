@@ -25,6 +25,8 @@ const META_OAUTH_REDIRECT_URI = process.env.META_OAUTH_REDIRECT_URI;
 const META_SCOPE = process.env.META_SCOPE || 'ads_read';
 const PORT = process.env.PORT || 3000;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
+const SHARE_USERNAME = process.env.SHARE_USERNAME;
+const SHARE_PASSWORD = process.env.SHARE_PASSWORD;
 const ENV_FILE = path.join(__dirname, '.env');
 const DATA_DIR = path.join(__dirname, 'data');
 const APPSFLYER_DIR = path.join(DATA_DIR, 'appsflyer');
@@ -50,6 +52,50 @@ if (!hasMetaConfig() && !hasGoogleConfig) {
 
 const app = express();
 
+function shouldBypassShareAuth(reqPath) {
+    return reqPath === '/health'
+        || reqPath === '/meta-token-callback.html'
+        || reqPath === '/api/meta/token'
+        || reqPath === '/api/meta/reauth-url';
+}
+
+function shareAuthMiddleware(req, res, next) {
+    if (!SHARE_USERNAME || !SHARE_PASSWORD) {
+        return next();
+    }
+
+    if (shouldBypassShareAuth(req.path)) {
+        return next();
+    }
+
+    const authHeader = String(req.headers.authorization || '');
+    if (!authHeader.startsWith('Basic ')) {
+        res.set('WWW-Authenticate', 'Basic realm="MetaGoogleAD"');
+        return res.status(401).send('Authentication required');
+    }
+
+    const encoded = authHeader.slice(6);
+    let decoded = '';
+    try {
+        decoded = Buffer.from(encoded, 'base64').toString('utf8');
+    } catch (_) {
+        res.set('WWW-Authenticate', 'Basic realm="MetaGoogleAD"');
+        return res.status(401).send('Invalid authentication');
+    }
+
+    const idx = decoded.indexOf(':');
+    const username = idx >= 0 ? decoded.slice(0, idx) : '';
+    const password = idx >= 0 ? decoded.slice(idx + 1) : '';
+
+    if (username !== SHARE_USERNAME || password !== SHARE_PASSWORD) {
+        res.set('WWW-Authenticate', 'Basic realm="MetaGoogleAD"');
+        return res.status(401).send('Invalid credentials');
+    }
+
+    return next();
+}
+
+app.use(shareAuthMiddleware);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '10mb' }));
 

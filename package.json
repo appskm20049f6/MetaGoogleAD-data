@@ -5,6 +5,11 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "pm2:start": "npx pm2 start ecosystem.config.cjs --env production",
+    "pm2:restart": "npx pm2 restart metagooglead-data",
+    "pm2:stop": "npx pm2 stop metagooglead-data",
+    "pm2:logs": "npx pm2 logs metagooglead-data",
+    "pm2:save": "npx pm2 save",
     "test:af-source": "node test_af_source.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

@@ -118,6 +118,70 @@ $env:PORT=3001
 npm start
 ```
 
+## 集中分享部署（你控 env，其他人連網址）
+
+如果你要讓同事直接連你的服務，建議使用「單一主機集中控管」模式：
+
+1. 在主機設定完整 `.env`（Meta/Google/APPS_SCRIPT_URL）
+2. 啟用分享保護（建議）
+
+```env
+SHARE_USERNAME=admin
+SHARE_PASSWORD=請改成強密碼
+```
+
+3. 啟動服務
+
+```bash
+npm start
+```
+
+4. 對外提供網址（例如反向代理 HTTPS 網域，或暫時用 tunnel）
+
+注意：
+
+- 若有設定 `SHARE_USERNAME/SHARE_PASSWORD`，系統會啟用 Basic Auth
+- `/health`、`/meta-token-callback.html`、`/api/meta/token`、`/api/meta/reauth-url` 不會被攔截
+- `.env` 不要上傳到版本控制
+- 對外分享時建議一定要走 HTTPS
+
+### Windows 常駐（PM2）
+
+1. 安裝相依套件
+
+```bash
+npm install
+```
+
+2. 啟動 PM2 常駐程序
+
+```bash
+npm run pm2:start
+```
+
+3. 查看執行日誌
+
+```bash
+npm run pm2:logs
+```
+
+4. 更新程式後重啟
+
+```bash
+npm run pm2:restart
+```
+
+5. 停止服務
+
+```bash
+npm run pm2:stop
+```
+
+備註：
+
+- PM2 讀取 [ecosystem.config.cjs](ecosystem.config.cjs)
+- 環境變數仍以主機上的 `.env` 為主
+
 ## API 概要
 
 ### 廣告查詢
