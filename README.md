@@ -182,6 +182,27 @@ npm run pm2:stop
 - PM2 讀取 [ecosystem.config.cjs](ecosystem.config.cjs)
 - 環境變數仍以主機上的 `.env` 為主
 
+### 固定分享網址（Cloudflare Named Tunnel）
+
+若你有 Cloudflare 網域，可建立固定子網域，不再使用隨機 `trycloudflare`。
+
+1. 一次性設定（會引導 Cloudflare 登入）
+
+```bash
+npm run share:fixed:setup -- -Hostname ad.yourdomain.com
+```
+
+2. 之後每次啟動固定 tunnel
+
+```bash
+npm run share:fixed
+```
+
+說明：
+
+- setup 會建立 named tunnel、寫入 `%USERPROFILE%\\.cloudflared\\config.yml`
+- run 會使用該 config 啟動固定網址 tunnel
+
 ## API 概要
 
 ### 廣告查詢

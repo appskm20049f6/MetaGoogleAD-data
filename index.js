@@ -316,6 +316,139 @@ function overlapDateRange(aSince, aUntil, bSince, bUntil) {
     return aSince <= bUntil && aUntil >= bSince;
 }
 
+function isContainedDateRange(innerSince, innerUntil, outerSince, outerUntil) {
+    return innerSince >= outerSince && innerUntil <= outerUntil;
+}
+
+function parseIsoDate(dateText) {
+    if (!isValidDateFormat(dateText)) {
+        return null;
+    }
+
+    const [year, month, day] = dateText.split('-').map((value) => Number(value));
+    const date = new Date(year, month - 1, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getInclusiveDateCount(since, until) {
+    const start = parseIsoDate(since);
+    const end = parseIsoDate(until);
+    if (!start || !end || start > end) {
+        return 0;
+    }
+
+    const diff = end.getTime() - start.getTime();
+    return Math.floor(diff / 86400000) + 1;
+}
+
+function getFileTimestampKey(fileName) {
+    const text = String(fileName || '');
+    const match = text.match(/^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)/);
+    return match ? match[1] : text;
+}
+
+function compareFileFreshness(left, right) {
+    return getFileTimestampKey(right.fileName).localeCompare(getFileTimestampKey(left.fileName));
+}
+
+function buildAppsflyerFileRecords(targetRange) {
+    ensureDir(APPSFLYER_DIR);
+
+    const jsonFiles = fs.readdirSync(APPSFLYER_DIR)
+        .filter((file) => file.toLowerCase().endsWith('.json'));
+
+    const deduped = new Map();
+    jsonFiles.forEach((fileName) => {
+        const filePath = path.join(APPSFLYER_DIR, fileName);
+        const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const rows = Array.isArray(content.rows) ? content.rows : [];
+        const metaSince = String(content.meta?.reportSince || content.meta?.since || '').trim();
+        const metaUntil = String(content.meta?.reportUntil || content.meta?.until || '').trim();
+        const detectedOS = String(content.meta?.detectedOS || 'Unknown').trim() || 'Unknown';
+        const recordSince = isValidDateFormat(metaSince) ? metaSince : targetRange.since;
+        const recordUntil = isValidDateFormat(metaUntil) ? metaUntil : recordSince;
+
+        const dedupeKey = `${recordSince}|${recordUntil}|${detectedOS.toLowerCase()}`;
+        const record = {
+            fileName,
+            filePath,
+            rows,
+            detectedOS,
+            since: recordSince,
+            until: recordUntil,
+            coveredDays: getInclusiveDateCount(recordSince, recordUntil)
+        };
+
+        const existing = deduped.get(dedupeKey);
+        if (!existing || compareFileFreshness(record, existing) < 0) {
+            deduped.set(dedupeKey, record);
+        }
+    });
+
+    return {
+        totalFileCount: jsonFiles.length,
+        records: Array.from(deduped.values())
+    };
+}
+
+function chooseBestNonOverlappingAppsflyerRecords(records) {
+    const sorted = records
+        .filter((record) => record.coveredDays > 0)
+        .sort((left, right) => {
+            if (left.until !== right.until) {
+                return left.until.localeCompare(right.until);
+            }
+            if (left.since !== right.since) {
+                return left.since.localeCompare(right.since);
+            }
+            return compareFileFreshness(left, right);
+        });
+
+    if (!sorted.length) {
+        return [];
+    }
+
+    const previousCompatible = sorted.map((current, index) => {
+        for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+            if (sorted[cursor].until < current.since) {
+                return cursor;
+            }
+        }
+        return -1;
+    });
+
+    const best = new Array(sorted.length);
+
+    const comparePlan = (left, right) => {
+        if (!right) return left;
+        if (!left) return right;
+
+        if (left.coveredDays !== right.coveredDays) {
+            return left.coveredDays > right.coveredDays ? left : right;
+        }
+        if (left.fileCount !== right.fileCount) {
+            return left.fileCount < right.fileCount ? left : right;
+        }
+        return left.freshnessKey >= right.freshnessKey ? left : right;
+    };
+
+    const buildPlan = (basePlan, record) => ({
+        coveredDays: (basePlan?.coveredDays || 0) + record.coveredDays,
+        fileCount: (basePlan?.fileCount || 0) + 1,
+        freshnessKey: [basePlan?.freshnessKey || '', getFileTimestampKey(record.fileName)].sort().join('|'),
+        items: [...(basePlan?.items || []), record]
+    });
+
+    sorted.forEach((record, index) => {
+        const includeBase = previousCompatible[index] >= 0 ? best[previousCompatible[index]] : null;
+        const includePlan = buildPlan(includeBase, record);
+        const excludePlan = index > 0 ? best[index - 1] : null;
+        best[index] = comparePlan(includePlan, excludePlan);
+    });
+
+    return best[best.length - 1]?.items || [];
+}
+
 function detectOSFromRows(rows) {
     if (!rows || !rows.length) return 'Unknown';
     
@@ -382,28 +515,18 @@ function buildAppsflyerInsights(options = {}) {
     const { datePreset = 'last_7d', since, until } = options;
     const targetRange = resolveDateRange({ datePreset, since, until });
 
-    ensureDir(APPSFLYER_DIR);
-    const jsonFiles = fs.readdirSync(APPSFLYER_DIR)
-        .filter((file) => file.toLowerCase().endsWith('.json'));
-    const totalFileCount = jsonFiles.length;
-    let matchedFileCount = 0;
+    const { totalFileCount, records } = buildAppsflyerFileRecords(targetRange);
+    const containedRecords = records.filter((record) => {
+        return isContainedDateRange(record.since, record.until, targetRange.since, targetRange.until);
+    });
+    const selectedRecords = chooseBestNonOverlappingAppsflyerRecords(containedRecords);
+    const matchedFileCount = selectedRecords.length;
+    const coveredDays = selectedRecords.reduce((sum, record) => sum + record.coveredDays, 0);
+    const targetDays = getInclusiveDateCount(targetRange.since, targetRange.until);
 
     const grouped = new Map();
-    jsonFiles.forEach((file) => {
-        const filePath = path.join(APPSFLYER_DIR, file);
-        const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        const rows = Array.isArray(content.rows) ? content.rows : [];
-        const metaSince = String(content.meta?.reportSince || content.meta?.since || '').trim();
-        const metaUntil = String(content.meta?.reportUntil || content.meta?.until || '').trim();
-        const recordSince = isValidDateFormat(metaSince) ? metaSince : targetRange.since;
-        const recordUntil = isValidDateFormat(metaUntil) ? metaUntil : recordSince;
-
-        if (!overlapDateRange(recordSince, recordUntil, targetRange.since, targetRange.until)) {
-            return;
-        }
-        matchedFileCount += 1;
-
-        rows.forEach((row) => {
+    selectedRecords.forEach((record) => {
+        record.rows.forEach((row) => {
             const mediaSource = String(row.mediaSource || 'None');
             const campaign = String(row.campaign || 'None');
             const key = `${mediaSource}|${campaign}`;
@@ -449,7 +572,20 @@ function buildAppsflyerInsights(options = {}) {
     return {
         rows,
         totalFileCount,
-        matchedFileCount
+        matchedFileCount,
+        coverage: {
+            requestedSince: targetRange.since,
+            requestedUntil: targetRange.until,
+            requestedDays: targetDays,
+            coveredDays,
+            isComplete: targetDays > 0 && coveredDays >= targetDays,
+            selectedFiles: selectedRecords.map((record) => ({
+                fileName: record.fileName,
+                since: record.since,
+                until: record.until,
+                detectedOS: record.detectedOS
+            }))
+        }
     };
 }
 
@@ -986,7 +1122,8 @@ app.get('/api/appsflyer/insights', (req, res) => {
             data: result.rows,
             meta: {
                 totalFileCount: result.totalFileCount,
-                matchedFileCount: result.matchedFileCount
+                matchedFileCount: result.matchedFileCount,
+                coverage: result.coverage
             }
         });
     } catch (error) {

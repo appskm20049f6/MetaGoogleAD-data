@@ -836,11 +836,15 @@ function buildIntegratedSheetMetrics(combinedRows) {
   const gaIos = summarize('google', 'iOS');
   const gaWeb = summarize('google', '網頁預約');
 
-  const hasAfMapped = Boolean(afMappedMetrics);
-  const fbAndResults = hasAfMapped ? Number(afMappedMetrics.fbAnd || 0) : fbAnd.adResults;
-  const fbIosResults = hasAfMapped ? Number(afMappedMetrics.fbIos || 0) : fbIos.adResults;
-  const gaAndResults = hasAfMapped ? Number(afMappedMetrics.gaAnd || 0) : gaAnd.adResults;
-  const gaIosResults = hasAfMapped ? Number(afMappedMetrics.gaIos || 0) : gaIos.adResults;
+  const hasAfMapped = Boolean(afMappedMetrics && afTotalCounts);
+  const afAndTotal = hasAfMapped ? Math.max(0, Number(afTotalCounts.andTotal || 0)) : 0;
+  const afIosTotal = hasAfMapped ? Math.max(0, Number(afTotalCounts.iosTotal || 0)) : 0;
+  const gaAndBase = hasAfMapped ? Math.max(0, Number(afMappedMetrics.gaAnd || 0)) : 0;
+  const gaIosBase = hasAfMapped ? Math.max(0, Number(afMappedMetrics.gaIos || 0)) : 0;
+  const gaAndResults = hasAfMapped ? Math.min(afAndTotal, gaAndBase) : gaAnd.adResults;
+  const gaIosResults = hasAfMapped ? Math.min(afIosTotal, gaIosBase) : gaIos.adResults;
+  const fbAndResults = hasAfMapped ? Math.max(0, afAndTotal - gaAndResults) : fbAnd.adResults;
+  const fbIosResults = hasAfMapped ? Math.max(0, afIosTotal - gaIosResults) : fbIos.adResults;
   const fbWebResults = fbWeb.adResults;
   const gaWebResults = gaWeb.adResults;
 
@@ -1176,7 +1180,16 @@ async function fetchAfSheetData() {
 
     const merged = mergeSheetPayloads(payloads);
     afMappedMetrics = mapAfSourcesToPlatforms(merged);
-    afTotalCounts = { andTotal: merged.android.total, iosTotal: merged.ios.total };
+    afTotalCounts = {
+      andTotal: merged.android.total,
+      iosTotal: merged.ios.total,
+      andInstalls: merged.android.installs,
+      iosInstalls: merged.ios.installs,
+      andReattribution: merged.android.reattribution,
+      iosReattribution: merged.ios.reattribution,
+      andReengagement: merged.android.reengagement,
+      iosReengagement: merged.ios.reengagement
+    };
 
     const rangeLabel = startDate ? `${startDate} ~ ${endDate}` : '全部資料';
     afDbStatusEl.textContent = `${label}｜${rangeLabel}｜合併 ${targetSheets.length} 張表（${targetSheets.join('、')}）`;
@@ -1208,6 +1221,8 @@ function renderAfSheetResult(data, label, rangeLabel) {
   afDbTbodyEl.innerHTML = `
     <tr><td>自然量 (Organic)</td><td>${data.organic}</td><td>${data.android?.organic ?? '-'}</td><td>${data.ios?.organic ?? '-'}</td></tr>
     <tr><td>付費量 (Non-organic)</td><td>${data.nonOrganic}</td><td>${data.android?.nonOrganic ?? '-'}</td><td>${data.ios?.nonOrganic ?? '-'}</td></tr>
+    <tr><td>再歸因</td><td>${data.reattribution ?? 0}</td><td>${data.android?.reattribution ?? 0}</td><td>${data.ios?.reattribution ?? 0}</td></tr>
+    <tr><td>再互動</td><td>${data.reengagement ?? 0}</td><td>${data.android?.reengagement ?? 0}</td><td>${data.ios?.reengagement ?? 0}</td></tr>
     <tr><td><strong>總下載</strong></td><td><strong>${data.total}</strong></td><td><strong>${data.android?.total ?? '-'}</strong></td><td><strong>${data.ios?.total ?? '-'}</strong></td></tr>
   `;
 
