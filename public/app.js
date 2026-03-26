@@ -1421,6 +1421,8 @@ async function copyTableToClipboard(tableEl) {
   if (!tableEl) return false;
   const tsv = tableToTsv(tableEl);
   const htmlStr = `<meta charset="utf-8">${tableEl.outerHTML}`;
+  
+  // Attempt 1: Try rich formatting (HTML + TSV)
   try {
     await navigator.clipboard.write([
       new ClipboardItem({
@@ -1429,12 +1431,30 @@ async function copyTableToClipboard(tableEl) {
       })
     ]);
     return true;
-  } catch (_) {
+  } catch (err1) {
+    console.warn('Rich clipboard write failed:', err1);
+    
+    // Attempt 2: Try plain text TSV only
     try {
       await navigator.clipboard.writeText(tsv);
       return true;
-    } catch (_2) {
-      return false;
+    } catch (err2) {
+      console.warn('Plain text clipboard write failed:', err2);
+      
+      // Attempt 3: Fallback - select table for manual copy
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(tableEl);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        document.execCommand('copy');
+        sel.removeAllRanges();
+        return true;
+      } catch (err3) {
+        console.error('Manual selection failed:', err3);
+        return false;
+      }
     }
   }
 }
