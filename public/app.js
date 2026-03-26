@@ -1244,17 +1244,33 @@ async function fetchAndRenderAfDaily(game, allSheets, startDate, endDate, label)
       }));
 
       const merged = mergeSheetPayloads(payloads);
+      // attempt to extract per-event per-OS counts from detailRows when available
+      const details = Array.isArray(merged.detailRows) ? merged.detailRows : [];
+      const sumBy = (evt, os) => details.filter(r => r.eventType === evt && (r.os || '').toLowerCase() === (os || '').toLowerCase()).reduce((s, r) => s + Number(r.count || 0), 0);
+      const installsAnd = sumBy('install', 'Android');
+      const installsIos = sumBy('install', 'iOS');
+      const reattrAnd = sumBy('re-attribution', 'Android');
+      const reattrIos = sumBy('re-attribution', 'iOS');
+      const reengAnd = sumBy('re-engagement', 'Android');
+      const reengIos = sumBy('re-engagement', 'iOS');
+
       dailyResults.push({
         date: dayStr,
         total: Number(merged.total || 0),
         android: Number(merged.android?.total || 0),
         ios: Number(merged.ios?.total || 0),
-        installs: Number(merged.installs || 0),
-        reattribution: Number(merged.reattribution || 0),
-        reengagement: Number(merged.reengagement || 0)
+        installs: Number(merged.installs || (installsAnd + installsIos)),
+        reattribution: Number(merged.reattribution || (reattrAnd + reattrIos)),
+        reengagement: Number(merged.reengagement || (reengAnd + reengIos)),
+        installsAnd,
+        installsIos,
+        reattrAnd,
+        reattrIos,
+        reengAnd,
+        reengIos
       });
     } catch (err) {
-      dailyResults.push({ date: dayStr, total: 0, android: 0, ios: 0, installs: 0, reattribution: 0, reengagement: 0 });
+      dailyResults.push({ date: dayStr, total: 0, android: 0, ios: 0, installs: 0, reattribution: 0, reengagement: 0, installsAnd:0, installsIos:0, reattrAnd:0, reattrIos:0, reengAnd:0, reengIos:0 });
     }
   }
 
@@ -1279,33 +1295,49 @@ function renderAfDailyTable(dailyResults, label) {
     return;
   }
 
+  // Build rows with clearer structure similar to above tables
   const rowsHtml = dailyResults.map((d) => {
-    const total = d.total || 0;
     return `
       <tbody class="daily-block">
-        <tr style="background:#f7f2e6;font-weight:700;"><td>${d.date}</td><td>${total}</td><td>總覽</td><td>${d.android}</td><td>${d.ios}</td></tr>
-        <tr><td></td><td>${d.installs}</td><td>安裝</td><td></td><td></td></tr>
-        <tr><td></td><td>${d.reattribution}</td><td>再歸因</td><td></td><td></td></tr>
-        <tr><td></td><td>${d.reengagement}</td><td>再互動</td><td></td><td></td></tr>
+        <tr class="date-row" style="background:#f7f2e6;font-weight:700;"><td style="padding:8px;border-top:1px solid #e0d6c0;">${d.date}</td><td style="padding:8px;border-top:1px solid #e0d6c0;text-align:right;">${d.total}</td><td style="padding:8px;border-top:1px solid #e0d6c0;">總覽</td><td style="padding:8px;border-top:1px solid #e0d6c0;text-align:right;">${d.android}</td><td style="padding:8px;border-top:1px solid #e0d6c0;text-align:right;">${d.ios}</td></tr>
+        <tr><td style="padding:6px;">&nbsp;</td><td style="padding:6px;text-align:right;">${d.installs}</td><td style="padding:6px;">安裝</td><td style="padding:6px;text-align:right;">${d.installsAnd || ''}</td><td style="padding:6px;text-align:right;">${d.installsIos || ''}</td></tr>
+        <tr><td style="padding:6px;">&nbsp;</td><td style="padding:6px;text-align:right;">${d.reattribution}</td><td style="padding:6px;">再歸因</td><td style="padding:6px;text-align:right;">${d.reattrAnd || ''}</td><td style="padding:6px;text-align:right;">${d.reattrIos || ''}</td></tr>
+        <tr><td style="padding:6px;">&nbsp;</td><td style="padding:6px;text-align:right;">${d.reengagement}</td><td style="padding:6px;">再互動</td><td style="padding:6px;text-align:right;">${d.reengAnd || ''}</td><td style="padding:6px;text-align:right;">${d.reengIos || ''}</td></tr>
       </tbody>
     `;
   }).join('');
 
-  // Note: we only have per-OS totals in merged payload; installs/reattribution/reengagement per-OS may be available in detailRows but to keep this simple we display totals and OS totals.
-  section.innerHTML = heading + `
-    <table style="width:100%;border-collapse:collapse;font-size:0.95rem;">
+  section.innerHTML = `
+    ${heading}
+    <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;">
+      <button id="afDailyCopyBtn" class="btn">複製日期明細</button>
+      <span id="afDailyCopyStatus" style="color:#666;font-size:0.9rem;"></span>
+    </div>
+    <table id="afDailyTable" style="width:100%;border-collapse:collapse;font-size:0.95rem;border:1px solid #eee;">
       <thead>
         <tr>
-          <th style="text-align:left;padding:6px;border-bottom:1px solid #e0d6c0;">日期</th>
-          <th style="text-align:right;padding:6px;border-bottom:1px solid #e0d6c0;">總計</th>
-          <th style="text-align:left;padding:6px;border-bottom:1px solid #e0d6c0;">類型</th>
-          <th style="text-align:right;padding:6px;border-bottom:1px solid #e0d6c0;">Android</th>
-          <th style="text-align:right;padding:6px;border-bottom:1px solid #e0d6c0;">iOS</th>
+          <th style="text-align:left;padding:8px;border-bottom:1px solid #e0d6c0;">日期</th>
+          <th style="text-align:right;padding:8px;border-bottom:1px solid #e0d6c0;">總計</th>
+          <th style="text-align:left;padding:8px;border-bottom:1px solid #e0d6c0;">類型</th>
+          <th style="text-align:right;padding:8px;border-bottom:1px solid #e0d6c0;">Android</th>
+          <th style="text-align:right;padding:8px;border-bottom:1px solid #e0d6c0;">iOS</th>
         </tr>
       </thead>
       ${rowsHtml}
     </table>
   `;
+
+  // wire copy button
+  const copyBtn = document.getElementById('afDailyCopyBtn');
+  const copyStatus = document.getElementById('afDailyCopyStatus');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      copyStatus.textContent = '複製中…';
+      const ok = await copyTableToClipboard(document.getElementById('afDailyTable'));
+      copyStatus.textContent = ok ? '✓ 複製完成' : '複製失敗，請手動選取表格。';
+      if (ok) setTimeout(() => { copyStatus.textContent = ''; }, 2500);
+    });
+  }
 }
 
 function renderAfSheetResult(data, label, rangeLabel) {
