@@ -31,6 +31,17 @@ const ENV_FILE = path.join(__dirname, '.env');
 const DATA_DIR = path.join(__dirname, 'data');
 const APPSFLYER_DIR = path.join(DATA_DIR, 'appsflyer');
 const ACCOUNT_PRESETS_FILE = path.join(DATA_DIR, 'account-presets.json');
+const MANUAL_ENTRIES_FILE = path.join(DATA_DIR, 'manual-entries.json');
+
+function readManualEntriesFile() {
+    try {
+        if (!fs.existsSync(MANUAL_ENTRIES_FILE)) return [];
+        return JSON.parse(fs.readFileSync(MANUAL_ENTRIES_FILE, 'utf8'));
+    } catch (e) { return []; }
+}
+function writeManualEntriesFile(entries) {
+    fs.writeFileSync(MANUAL_ENTRIES_FILE, JSON.stringify(entries, null, 2), 'utf8');
+}
 
 function hasMetaConfig() {
     return Boolean(ACCESS_TOKEN && AD_ACCOUNT_ID);
@@ -1180,6 +1191,35 @@ app.post('/api/account-presets', (req, res) => {
         return res.json({ ok: true, saved: normalized });
     } catch (error) {
         return res.status(500).json({ error: `儲存失敗：${error.message}` });
+    }
+});
+
+app.get('/api/manual-entries', (req, res) => {
+    res.json(readManualEntriesFile());
+});
+
+app.post('/api/manual-entries', (req, res) => {
+    try {
+        const entry = req.body;
+        if (!entry || !entry.id || !entry.name) return res.status(400).json({ error: '缺少必要欄位' });
+        const entries = readManualEntriesFile();
+        const idx = entries.findIndex(e => e.id === entry.id);
+        if (idx >= 0) entries[idx] = entry; else entries.push(entry);
+        writeManualEntriesFile(entries);
+        res.json({ ok: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/manual-entries/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const entries = readManualEntriesFile().filter(e => e.id !== id);
+        writeManualEntriesFile(entries);
+        res.json({ ok: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 

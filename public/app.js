@@ -103,14 +103,26 @@ const nf = new Intl.NumberFormat('zh-TW');
 const twdFormatter = new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 });
 const SETTINGS_KEY = 'meta_dashboard_settings_v1';
 const SHEET_SNAPSHOTS_KEY = 'integrated_sheet_snapshots_v1';
-const MANUAL_ENTRIES_KEY = 'manual_entries_v1';
 let manualEntries = [];
 
-function loadManualEntries() {
-  try { manualEntries = JSON.parse(localStorage.getItem(MANUAL_ENTRIES_KEY) || '[]'); } catch(e) { manualEntries = []; }
+async function loadManualEntries() {
+  try {
+    const res = await fetch('/api/manual-entries');
+    manualEntries = await res.json();
+  } catch(e) { manualEntries = []; }
 }
-function saveManualEntries() {
-  localStorage.setItem(MANUAL_ENTRIES_KEY, JSON.stringify(manualEntries));
+async function saveManualEntry(entry) {
+  await fetch('/api/manual-entries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry)
+  });
+  manualEntries = manualEntries.filter(e => e.id !== entry.id);
+  manualEntries.push(entry);
+}
+async function deleteManualEntryFromServer(id) {
+  await fetch(`/api/manual-entries/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  manualEntries = manualEntries.filter(e => e.id !== id);
 }
 function calcManualSpendTwd(entry) {
   const fx = getFxRate();
@@ -159,10 +171,10 @@ function renderManualTable(entries) {
 }
 function deleteManualEntry(id) {
   if (!confirm('確定要刪除這筆紀錄？')) return;
-  manualEntries = manualEntries.filter(e => e.id !== id);
-  saveManualEntries();
-  renderManualTable(manualEntries);
-  manualStatusEl.textContent = '已刪除。';
+  deleteManualEntryFromServer(id).then(() => {
+    renderManualTable(manualEntries);
+    manualStatusEl.textContent = '已刪除。';
+  });
 }
 const defaultSettings = {
   fxRate: 32,
@@ -175,7 +187,6 @@ const defaultSettings = {
 };
 
 let settings = loadSettings();
-loadManualEntries();
 let activeTab = settings.selectedPlatform === 'google' ? 'google' : 'meta';
 let currentRows = [];
 let selectedRowIds = new Set();
@@ -1740,9 +1751,10 @@ function setActiveTab(tab) {
   manualPanelEl.hidden = tab !== 'manual';
 
   if (tab === 'manual') {
-    loadManualEntries();
-    renderManualTable(manualEntries);
-    manualStatusEl.textContent = manualEntries.length > 0 ? `共 ${manualEntries.length} 筆紀錄。` : '';
+    loadManualEntries().then(() => {
+      renderManualTable(manualEntries);
+      manualStatusEl.textContent = manualEntries.length > 0 ? `共 ${manualEntries.length} 筆紀錄。` : '';
+    });
     return;
   }
 
@@ -1752,7 +1764,7 @@ function setActiveTab(tab) {
   }
 
   if (tab === 'copySheet') {
-    renderCopySheetView();
+    loadManualEntries().then(() => renderCopySheetView());
     return;
   }
 
@@ -1870,7 +1882,7 @@ tabManualEl.addEventListener('click', () => setActiveTab('manual'));
 
 // manual form events
 [manualSpendEl, manualCurrencyEl, manualFeeRateEl, manualDownloadsEl].forEach(el => el.addEventListener('input', updateManualCpiDisplay));
-manualSaveBtnEl.addEventListener('click', () => {
+manualSaveBtnEl.addEventListener('click', async () => {
   const name = manualNameEl.value.trim();
   if (!name) { manualStatusEl.textContent = '請填入廣告組名稱。'; return; }
   const start = manualStartDateEl.value;
@@ -1879,7 +1891,6 @@ manualSaveBtnEl.addEventListener('click', () => {
   if (start > end) { manualStatusEl.textContent = '開始日期不可晚於結束日期。'; return; }
   const spend = parseFloat(manualSpendEl.value);
   if (!spend || spend <= 0) { manualStatusEl.textContent = '請填入有效的花費金額。'; return; }
-  loadManualEntries();
   const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2),
     name,
@@ -1892,10 +1903,16 @@ manualSaveBtnEl.addEventListener('click', () => {
     afDownloads: parseInt(manualDownloadsEl.value, 10) || 0,
     createdAt: new Date().toISOString()
   };
-  manualEntries.push(entry);
-  saveManualEntries();
-  renderManualTable(manualEntries);
-  manualStatusEl.textContent = `已儲存「${name}」。共 ${manualEntries.length} 筆紀錄。`;
+  try {
+    manualSaveBtnEl.disabled = true;
+    await saveManualEntry(entry);
+    renderManualTable(manualEntries);
+    manualStatusEl.textContent = `已儲存「${name}」。共 ${manualEntries.length} 筆紀錄。`;
+  } catch(err) {
+    manualStatusEl.textContent = `儲存失敗：${err.message}`;
+  } finally {
+    manualSaveBtnEl.disabled = false;
+  }
 });
 manualClearBtnEl.addEventListener('click', () => {
   manualNameEl.value = '';
@@ -1909,8 +1926,8 @@ manualClearBtnEl.addEventListener('click', () => {
   manualCpiDisplayEl.textContent = '-';
   manualStatusEl.textContent = '';
 });
-manualFilterBtnEl.addEventListener('click', () => {
-  loadManualEntries();
+manualFilterBtnEl.addEventListener('click', async () => {
+  await loadManualEntries();
   const s = manualFilterStartEl.value;
   const e = manualFilterEndEl.value;
   if (!s || !e) { manualStatusEl.textContent = '請選擇查詢的日期區間。'; return; }
@@ -1918,8 +1935,8 @@ manualFilterBtnEl.addEventListener('click', () => {
   renderManualTable(filtered);
   manualStatusEl.textContent = filtered.length > 0 ? `${s} ~ ${e} 共 ${filtered.length} 筆紀錄。` : `${s} ~ ${e} 沒有紀錄。`;
 });
-manualShowAllBtnEl.addEventListener('click', () => {
-  loadManualEntries();
+manualShowAllBtnEl.addEventListener('click', async () => {
+  await loadManualEntries();
   renderManualTable(manualEntries);
   manualFilterStartEl.value = '';
   manualFilterEndEl.value = '';
