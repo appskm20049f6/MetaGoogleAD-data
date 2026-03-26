@@ -58,6 +58,26 @@ const afDbMappedSectionEl = document.getElementById('afDbMappedSection');
 const afDbMappedTbodyEl = document.getElementById('afDbMappedTbody');
 const tabCopySheetEl = document.getElementById('tabCopySheet');
 const copySheetPanelEl = document.getElementById('copySheetPanel');
+const tabManualEl = document.getElementById('tabManual');
+const manualPanelEl = document.getElementById('manualPanel');
+const manualNameEl = document.getElementById('manualName');
+const manualPlatformEl = document.getElementById('manualPlatform');
+const manualStartDateEl = document.getElementById('manualStartDate');
+const manualEndDateEl = document.getElementById('manualEndDate');
+const manualSpendEl = document.getElementById('manualSpend');
+const manualCurrencyEl = document.getElementById('manualCurrency');
+const manualFeeRateEl = document.getElementById('manualFeeRate');
+const manualDownloadsEl = document.getElementById('manualDownloads');
+const manualCpiDisplayEl = document.getElementById('manualCpiDisplay');
+const manualSaveBtnEl = document.getElementById('manualSaveBtn');
+const manualClearBtnEl = document.getElementById('manualClearBtn');
+const manualFilterStartEl = document.getElementById('manualFilterStart');
+const manualFilterEndEl = document.getElementById('manualFilterEnd');
+const manualFilterBtnEl = document.getElementById('manualFilterBtn');
+const manualShowAllBtnEl = document.getElementById('manualShowAllBtn');
+const manualStatusEl = document.getElementById('manualStatus');
+const manualTableWrapEl = document.getElementById('manualTableWrap');
+const manualTbodyEl = document.getElementById('manualTbody');
 const copySheetDateLabelEl = document.getElementById('copySheetDateLabel');
 const copySheetOfflineAndEl = document.getElementById('copySheetOfflineAnd');
 const copySheetOfflineIosEl = document.getElementById('copySheetOfflineIos');
@@ -70,6 +90,7 @@ const sumClicksEl = document.getElementById('sumClicks');
 const sumCtrEl = document.getElementById('sumCtr');
 const avgCpiEl = document.getElementById('avgCpi');
 const sumSpendEl = document.getElementById('sumSpend');
+const serviceFeeCardEl = document.getElementById('serviceFeeCard');
 const integratedMetaSpendEl = document.getElementById('integratedMetaSpend');
 const integratedGoogleSpendEl = document.getElementById('integratedGoogleSpend');
 const integratedAndroidSpendEl = document.getElementById('integratedAndroidSpend');
@@ -82,6 +103,67 @@ const nf = new Intl.NumberFormat('zh-TW');
 const twdFormatter = new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 });
 const SETTINGS_KEY = 'meta_dashboard_settings_v1';
 const SHEET_SNAPSHOTS_KEY = 'integrated_sheet_snapshots_v1';
+const MANUAL_ENTRIES_KEY = 'manual_entries_v1';
+let manualEntries = [];
+
+function loadManualEntries() {
+  try { manualEntries = JSON.parse(localStorage.getItem(MANUAL_ENTRIES_KEY) || '[]'); } catch(e) { manualEntries = []; }
+}
+function saveManualEntries() {
+  localStorage.setItem(MANUAL_ENTRIES_KEY, JSON.stringify(manualEntries));
+}
+function calcManualSpendTwd(entry) {
+  const fx = getFxRate();
+  const base = entry.spendCurrency === 'USD' ? entry.spendAmount * fx : entry.spendAmount;
+  return base * (entry.serviceFeeRate || 1);
+}
+function getManualEntriesInRange(startDate, endDate) {
+  if (!startDate || !endDate) return [];
+  return manualEntries.filter(e => e.startDate <= endDate && e.endDate >= startDate);
+}
+function updateManualCpiDisplay() {
+  const spend = parseFloat(manualSpendEl.value) || 0;
+  const currency = manualCurrencyEl.value;
+  const feeRate = parseFloat(manualFeeRateEl.value) || 1;
+  const downloads = parseInt(manualDownloadsEl.value, 10) || 0;
+  const fx = getFxRate();
+  const spendTwd = (currency === 'USD' ? spend * fx : spend) * feeRate;
+  if (downloads > 0 && spendTwd > 0) {
+    manualCpiDisplayEl.textContent = `$${nf.format(Math.round(spendTwd / downloads))}`;
+  } else {
+    manualCpiDisplayEl.textContent = '-';
+  }
+}
+function renderManualTable(entries) {
+  if (!entries.length) {
+    manualTableWrapEl.hidden = true;
+    return;
+  }
+  const fx = getFxRate();
+  manualTbodyEl.innerHTML = entries.map(e => {
+    const spendTwd = calcManualSpendTwd(e);
+    const cpi = e.afDownloads > 0 ? Math.round(spendTwd / e.afDownloads) : null;
+    const platformLabel = e.platform === 'ios' ? 'iOS' : e.platform === 'android' ? 'Android' : '兩者';
+    return `<tr>
+      <td>${escapeHtml(e.name)}</td>
+      <td>${platformLabel}</td>
+      <td>${e.startDate} ~ ${e.endDate}</td>
+      <td>$${nf.format(Math.round(spendTwd))}</td>
+      <td>${e.serviceFeeRate}</td>
+      <td>${nf.format(e.afDownloads || 0)}</td>
+      <td>${cpi !== null ? '$' + nf.format(cpi) : '-'}</td>
+      <td><button type="button" onclick="deleteManualEntry('${e.id}')">刪除</button></td>
+    </tr>`;
+  }).join('');
+  manualTableWrapEl.hidden = false;
+}
+function deleteManualEntry(id) {
+  if (!confirm('確定要刪除這筆紀錄？')) return;
+  manualEntries = manualEntries.filter(e => e.id !== id);
+  saveManualEntries();
+  renderManualTable(manualEntries);
+  manualStatusEl.textContent = '已刪除。';
+}
 const defaultSettings = {
   fxRate: 32,
   selectedPlatform: 'meta',
@@ -93,6 +175,7 @@ const defaultSettings = {
 };
 
 let settings = loadSettings();
+loadManualEntries();
 let activeTab = settings.selectedPlatform === 'google' ? 'google' : 'meta';
 let currentRows = [];
 let selectedRowIds = new Set();
@@ -357,7 +440,7 @@ function detectCategory(row, name, source) {
 function normalizeRows(rows, source) {
   return rows.map((row, index) => {
     const results = getAfDownload(row.actions);
-    const normalizedSpendUsd = toUsdFromRow(row);
+    const normalizedSpendUsd = toUsdFromRow(row) * (source === 'google' ? 1.05 : 1);
     const impressions = toNumber(row.impressions);
     const clicks = toNumber(row.clicks);
     const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
@@ -617,6 +700,7 @@ function selectAllRows(checked) {
 function renderCurrentPlatformState() {
   currentRows = [...platformRows[getCurrentPlatform()]];
   selectedRowIds = new Set(currentRows.map((row) => row.id));
+  serviceFeeCardEl.hidden = getCurrentPlatform() !== 'google';
   renderTable();
 
   if (!currentRows.length) {
@@ -865,13 +949,21 @@ function buildIntegratedSheetMetrics(combinedRows) {
   const andSpend = fbAnd.spendTwd + gaAnd.spendTwd;
   const iosSpend = fbIos.spendTwd + gaIos.spendTwd;
   const webSpend = fbWeb.spendTwd + gaWeb.spendTwd;
-  const andResults = fbAnd.results + gaAnd.results;
-  const iosResults = fbIos.results + gaIos.results;
+
+  // manual entries
+  const manualInRange = getManualEntriesInRange(firstDate, lastDate);
+  const manualAndSpend = manualInRange.filter(e => e.platform === 'android' || e.platform === 'both').reduce((s, e) => s + calcManualSpendTwd(e), 0);
+  const manualIosSpend = manualInRange.filter(e => e.platform === 'ios' || e.platform === 'both').reduce((s, e) => s + calcManualSpendTwd(e), 0);
+  const manualAndDownloads = manualInRange.filter(e => e.platform === 'android' || e.platform === 'both').reduce((s, e) => s + (e.afDownloads || 0), 0);
+  const manualIosDownloads = manualInRange.filter(e => e.platform === 'ios' || e.platform === 'both').reduce((s, e) => s + (e.afDownloads || 0), 0);
+
+  const andResults = fbAnd.results + gaAnd.results + manualAndDownloads;
+  const iosResults = fbIos.results + gaIos.results + manualIosDownloads;
   const webResults = fbWeb.results + gaWeb.results;
   const excludedRows = combinedRows.filter((row) => row.os !== 'Android' && row.os !== 'iOS' && row.os !== '網頁預約');
   const excludedSpend = excludedRows.reduce((sum, row) => sum + toTwd(row.spendUsd), 0);
   const excludedResults = excludedRows.reduce((sum, row) => sum + row.results, 0);
-  const totalSpend = andSpend + iosSpend + webSpend + excludedSpend;
+  const totalSpend = andSpend + iosSpend + webSpend + excludedSpend + manualAndSpend + manualIosSpend;
   const totalResults = andResults + iosResults + webResults + excludedResults;
   const andCpa = andResults > 0 ? andSpend / andResults : null;
   const iosCpa = iosResults > 0 ? iosSpend / iosResults : null;
@@ -898,6 +990,11 @@ function buildIntegratedSheetMetrics(combinedRows) {
     iosCpa,
     webCpa,
     totalCpa,
+    manualInRange,
+    manualAndSpend,
+    manualIosSpend,
+    manualAndDownloads,
+    manualIosDownloads,
     sourceRowCount: combinedRows.length,
     includedRowCount: combinedRows.length - excludedRows.length,
     excludedRowCount: excludedRows.length,
@@ -1506,11 +1603,21 @@ function renderCopySheetView() {
 
   const andTotalInstalls = hasAfCounts ? (fbAndRes + gaAndRes) : null;
   const iosTotalInstalls = hasAfCounts ? (fbIosRes + gaIosRes) : null;
-  const andPlatformCpa = safeCpa(metrics.andSpend, andTotalInstalls);
-  const iosPlatformCpa = safeCpa(metrics.iosSpend, iosTotalInstalls);
+
+  // manual entries
+  const hasManual = metrics.manualInRange && metrics.manualInRange.length > 0;
+  const manualAndSpend = metrics.manualAndSpend || 0;
+  const manualIosSpend = metrics.manualIosSpend || 0;
+  const manualAndRes = metrics.manualAndDownloads || 0;
+  const manualIosRes = metrics.manualIosDownloads || 0;
+
+  const andSpendTotal = metrics.andSpend - manualAndSpend; // FB+GA only for platform row
+  const iosSpendTotal = metrics.iosSpend - manualIosSpend;
+  const andPlatformCpa = safeCpa(andSpendTotal, andTotalInstalls);
+  const iosPlatformCpa = safeCpa(iosSpendTotal, iosTotalInstalls);
 
   const grandTotalSpend = metrics.andSpend + metrics.iosSpend + offAnd + offIosNum;
-  const grandTotalResults = (andTotalInstalls ?? 0) + (iosTotalInstalls ?? 0);
+  const grandTotalResults = (andTotalInstalls ?? 0) + (iosTotalInstalls ?? 0) + manualAndRes + manualIosRes;
   const grandTotalCpa = grandTotalResults > 0 ? grandTotalSpend / grandTotalResults : null;
 
   const S = {
@@ -1584,6 +1691,16 @@ function renderCopySheetView() {
           <td colspan="2" style="${S.data}">${fmtVal(offAnd)}</td>
           <td colspan="2" style="${S.data}">${offIos !== null ? fmtVal(offIos) : ''}</td>
         </tr>
+        ${hasManual ? `<tr>
+          <td style="${S.lbl}">手動(其他) AND</td>
+          <td colspan="2" style="${S.data}">${fmtVal(manualAndSpend)}${manualAndRes > 0 ? ` / ${nf.format(manualAndRes)}人` : ''}</td>
+          <td colspan="2" style="${S.totEmp}"></td>
+        </tr>
+        <tr>
+          <td style="${S.lbl}">手動(其他) iOS</td>
+          <td colspan="2" style="${S.totEmp}"></td>
+          <td colspan="2" style="${S.data}">${fmtVal(manualIosSpend)}${manualIosRes > 0 ? ` / ${nf.format(manualIosRes)}人` : ''}</td>
+        </tr>` : ''}
         <tr>
           <td style="${S.totLbl}">總花費</td>
           <td colspan="4" style="${S.totData}">${fmtVal(grandTotalSpend)}</td>
@@ -1614,11 +1731,20 @@ function setActiveTab(tab) {
   tabIntegratedEl.classList.toggle('active', tab === 'integrated');
   tabIntegrated2El.classList.toggle('active', tab === 'integrated2');
   tabCopySheetEl.classList.toggle('active', tab === 'copySheet');
+  tabManualEl.classList.toggle('active', tab === 'manual');
 
-  queryPanelEl.hidden = tab === 'integrated' || tab === 'integrated2' || tab === 'copySheet';
+  queryPanelEl.hidden = tab === 'integrated' || tab === 'integrated2' || tab === 'copySheet' || tab === 'manual';
   integratedPanelEl.hidden = tab !== 'integrated';
   integratedSheetPanelEl.hidden = tab !== 'integrated2';
   copySheetPanelEl.hidden = tab !== 'copySheet';
+  manualPanelEl.hidden = tab !== 'manual';
+
+  if (tab === 'manual') {
+    loadManualEntries();
+    renderManualTable(manualEntries);
+    manualStatusEl.textContent = manualEntries.length > 0 ? `共 ${manualEntries.length} 筆紀錄。` : '';
+    return;
+  }
 
   if (tab === 'integrated') {
     renderIntegratedView();
@@ -1740,6 +1866,66 @@ tabGoogleEl.addEventListener('click', () => setActiveTab('google'));
 tabIntegratedEl.addEventListener('click', () => setActiveTab('integrated'));
 tabIntegrated2El.addEventListener('click', () => setActiveTab('integrated2'));
 tabCopySheetEl.addEventListener('click', () => setActiveTab('copySheet'));
+tabManualEl.addEventListener('click', () => setActiveTab('manual'));
+
+// manual form events
+[manualSpendEl, manualCurrencyEl, manualFeeRateEl, manualDownloadsEl].forEach(el => el.addEventListener('input', updateManualCpiDisplay));
+manualSaveBtnEl.addEventListener('click', () => {
+  const name = manualNameEl.value.trim();
+  if (!name) { manualStatusEl.textContent = '請填入廣告組名稱。'; return; }
+  const start = manualStartDateEl.value;
+  const end = manualEndDateEl.value;
+  if (!start || !end) { manualStatusEl.textContent = '請選擇開始與結束日期。'; return; }
+  if (start > end) { manualStatusEl.textContent = '開始日期不可晚於結束日期。'; return; }
+  const spend = parseFloat(manualSpendEl.value);
+  if (!spend || spend <= 0) { manualStatusEl.textContent = '請填入有效的花費金額。'; return; }
+  loadManualEntries();
+  const entry = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+    name,
+    platform: manualPlatformEl.value,
+    startDate: start,
+    endDate: end,
+    spendAmount: spend,
+    spendCurrency: manualCurrencyEl.value,
+    serviceFeeRate: parseFloat(manualFeeRateEl.value) || 1,
+    afDownloads: parseInt(manualDownloadsEl.value, 10) || 0,
+    createdAt: new Date().toISOString()
+  };
+  manualEntries.push(entry);
+  saveManualEntries();
+  renderManualTable(manualEntries);
+  manualStatusEl.textContent = `已儲存「${name}」。共 ${manualEntries.length} 筆紀錄。`;
+});
+manualClearBtnEl.addEventListener('click', () => {
+  manualNameEl.value = '';
+  manualPlatformEl.value = 'ios';
+  manualStartDateEl.value = '';
+  manualEndDateEl.value = '';
+  manualSpendEl.value = '';
+  manualCurrencyEl.value = 'TWD';
+  manualFeeRateEl.value = '1.00';
+  manualDownloadsEl.value = '';
+  manualCpiDisplayEl.textContent = '-';
+  manualStatusEl.textContent = '';
+});
+manualFilterBtnEl.addEventListener('click', () => {
+  loadManualEntries();
+  const s = manualFilterStartEl.value;
+  const e = manualFilterEndEl.value;
+  if (!s || !e) { manualStatusEl.textContent = '請選擇查詢的日期區間。'; return; }
+  const filtered = getManualEntriesInRange(s, e);
+  renderManualTable(filtered);
+  manualStatusEl.textContent = filtered.length > 0 ? `${s} ~ ${e} 共 ${filtered.length} 筆紀錄。` : `${s} ~ ${e} 沒有紀錄。`;
+});
+manualShowAllBtnEl.addEventListener('click', () => {
+  loadManualEntries();
+  renderManualTable(manualEntries);
+  manualFilterStartEl.value = '';
+  manualFilterEndEl.value = '';
+  manualStatusEl.textContent = `共 ${manualEntries.length} 筆紀錄。`;
+});
+
 copySheetCopyBtnEl.addEventListener('click', async () => {
   const tableEl = document.getElementById('excelMergedTable');
   const ok = await copyTableToClipboard(tableEl);

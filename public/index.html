@@ -17,6 +17,7 @@
       <button id="tabIntegrated2" class="tab-button" type="button">AF數據</button>
       <button id="tabIntegrated" class="tab-button" type="button">數據統整</button>
       <button id="tabCopySheet" class="tab-button" type="button">數據簡表</button>
+      <button id="tabManual" class="tab-button" type="button">手動輸入</button>
     </div>
 
     <section class="panel">
@@ -116,6 +117,10 @@
         <div class="card">
           <h3>花費 (TWD)</h3>
           <p id="sumSpend">-</p>
+        </div>
+        <div class="card" id="serviceFeeCard" hidden>
+          <h3>服務費率</h3>
+          <p>×1.05</p>
         </div>
       </div>
 
@@ -290,6 +295,94 @@
           <button id="copySheetCopyBtn" class="copy-btn" type="button">複製</button>
         </div>
         <div id="copySheetTableWrap" class="excel-table-wrap"></div>
+      </div>
+
+      <div id="manualPanel" class="tab-panel" hidden>
+        <div class="hint">手動輸入其他廣告渠道（如 ASA）的花費與下載數，儲存後將自動整合到統整頁與簡表頁的對應日期區間。</div>
+        <div class="settings-grid">
+          <div>
+            <label for="manualName">廣告組名稱</label>
+            <input id="manualName" type="text" placeholder="例：ASA-搜尋廣告" />
+          </div>
+          <div>
+            <label for="manualPlatform">平台</label>
+            <select id="manualPlatform">
+              <option value="ios">iOS</option>
+              <option value="android">Android</option>
+              <option value="both">兩者</option>
+            </select>
+          </div>
+          <div>
+            <label for="manualStartDate">開始日期</label>
+            <input id="manualStartDate" type="date" />
+          </div>
+          <div>
+            <label for="manualEndDate">結束日期</label>
+            <input id="manualEndDate" type="date" />
+          </div>
+          <div>
+            <label for="manualSpend">花費金額</label>
+            <input id="manualSpend" type="number" min="0" step="any" placeholder="0" />
+          </div>
+          <div>
+            <label for="manualCurrency">幣別</label>
+            <select id="manualCurrency">
+              <option value="TWD">TWD（台幣）</option>
+              <option value="USD">USD（美金）</option>
+            </select>
+          </div>
+          <div>
+            <label for="manualFeeRate">服務費率</label>
+            <input id="manualFeeRate" type="number" step="0.01" min="1" value="1.00" placeholder="1.05" />
+          </div>
+          <div>
+            <label for="manualDownloads">AF 下載數</label>
+            <input id="manualDownloads" type="number" min="0" placeholder="0" />
+          </div>
+          <div>
+            <label>CPI（TWD，自動計算）</label>
+            <p id="manualCpiDisplay" style="font-weight:700;font-size:1.1rem;">-</p>
+          </div>
+          <div class="settings-actions">
+            <button id="manualSaveBtn" type="button">存檔</button>
+            <button id="manualClearBtn" type="button">清除</button>
+          </div>
+        </div>
+
+        <div class="filters" style="margin-top:1.5rem;">
+          <div><label style="font-weight:700;">查詢日期區間</label></div>
+          <div>
+            <label for="manualFilterStart">開始日期</label>
+            <input id="manualFilterStart" type="date" />
+          </div>
+          <div>
+            <label for="manualFilterEnd">結束日期</label>
+            <input id="manualFilterEnd" type="date" />
+          </div>
+          <div>
+            <button id="manualFilterBtn" type="button">查詢紀錄</button>
+            <button id="manualShowAllBtn" type="button" style="margin-left:0.5rem;">顯示全部</button>
+          </div>
+        </div>
+
+        <div id="manualStatus" class="status" style="margin-top:0.75rem;"></div>
+        <div id="manualTableWrap" class="table-wrap" hidden style="margin-top:1rem;">
+          <table>
+            <thead>
+              <tr>
+                <th>廣告組名稱</th>
+                <th>平台</th>
+                <th>日期區間</th>
+                <th>花費(TWD)</th>
+                <th>服務費率</th>
+                <th>AF下載</th>
+                <th>CPI</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="manualTbody"></tbody>
+          </table>
+        </div>
       </div>
 
     </section>
