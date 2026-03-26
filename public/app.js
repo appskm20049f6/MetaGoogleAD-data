@@ -1194,6 +1194,12 @@ async function fetchAfSheetData() {
     const rangeLabel = startDate ? `${startDate} ~ ${endDate}` : '全部資料';
     afDbStatusEl.textContent = `${label}｜${rangeLabel}｜合併 ${targetSheets.length} 張表（${targetSheets.join('、')}）`;
     renderAfSheetResult(merged, label, rangeLabel);
+    // 逐日明細：若有自訂區間則為每一天呼叫 API 並顯示每日統計（含安裝/再歸因/再互動）
+    try {
+      await fetchAndRenderAfDaily(game, allSheets, startDate, endDate, label);
+    } catch (errDaily) {
+      console.warn('fetch daily failed', errDaily);
+    }
     renderIntegratedSheetView();
     renderCopySheetView();
   } catch (e) {
@@ -1203,6 +1209,103 @@ async function fetchAfSheetData() {
   } finally {
     afDbFetchBtnEl.disabled = false;
   }
+}
+
+function formatYmd(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+async function fetchAndRenderAfDaily(game, allSheets, startDate, endDate, label) {
+  if (!game) return;
+  // if no startDate provided, do nothing
+  if (!startDate) return;
+  const s = new Date(startDate + 'T00:00:00');
+  const e = new Date(endDate + 'T00:00:00');
+  if (isNaN(s) || isNaN(e) || s > e) return;
+
+  const days = [];
+  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+    days.push(new Date(d));
+  }
+
+  const dailyResults = [];
+  for (const day of days) {
+    const dayStr = formatYmd(day);
+    try {
+      const payloads = await Promise.all(resolveCompanionSheets(game, allSheets).map(async (sheetName) => {
+        const params = new URLSearchParams({ game: sheetName, startDate: dayStr, endDate: dayStr });
+        const res = await fetch(`/api/sheet/installs?${params}`);
+        const data = await res.json();
+        if (data.error) throw new Error(`[${sheetName}] ${data.error}`);
+        return normalizeSheetPayload(data, sheetName);
+      }));
+
+      const merged = mergeSheetPayloads(payloads);
+      dailyResults.push({
+        date: dayStr,
+        total: Number(merged.total || 0),
+        android: Number(merged.android?.total || 0),
+        ios: Number(merged.ios?.total || 0),
+        installs: Number(merged.installs || 0),
+        reattribution: Number(merged.reattribution || 0),
+        reengagement: Number(merged.reengagement || 0)
+      });
+    } catch (err) {
+      dailyResults.push({ date: dayStr, total: 0, android: 0, ios: 0, installs: 0, reattribution: 0, reengagement: 0 });
+    }
+  }
+
+  renderAfDailyTable(dailyResults, label);
+}
+
+function renderAfDailyTable(dailyResults, label) {
+  if (!afDbWrapEl) return;
+  let section = document.getElementById('afDbDailySection');
+  if (!section) {
+    section = document.createElement('div');
+    section.id = 'afDbDailySection';
+    section.className = 'af-daily-section';
+    section.style.marginTop = '16px';
+    afDbWrapEl.appendChild(section);
+  }
+
+  const heading = `<div style="font-weight:600;margin-bottom:8px;">日期明細（${escapeHtml(label || '')}）</div>`;
+
+  if (!Array.isArray(dailyResults) || dailyResults.length === 0) {
+    section.innerHTML = heading + '<div class="hint">無每日資料</div>';
+    return;
+  }
+
+  const rowsHtml = dailyResults.map((d) => {
+    const total = d.total || 0;
+    return `
+      <tbody class="daily-block">
+        <tr style="background:#f7f2e6;font-weight:700;"><td>${d.date}</td><td>${total}</td><td>總覽</td><td>${d.android}</td><td>${d.ios}</td></tr>
+        <tr><td></td><td>${d.installs}</td><td>安裝</td><td></td><td></td></tr>
+        <tr><td></td><td>${d.reattribution}</td><td>再歸因</td><td></td><td></td></tr>
+        <tr><td></td><td>${d.reengagement}</td><td>再互動</td><td></td><td></td></tr>
+      </tbody>
+    `;
+  }).join('');
+
+  // Note: we only have per-OS totals in merged payload; installs/reattribution/reengagement per-OS may be available in detailRows but to keep this simple we display totals and OS totals.
+  section.innerHTML = heading + `
+    <table style="width:100%;border-collapse:collapse;font-size:0.95rem;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #e0d6c0;">日期</th>
+          <th style="text-align:right;padding:6px;border-bottom:1px solid #e0d6c0;">總計</th>
+          <th style="text-align:left;padding:6px;border-bottom:1px solid #e0d6c0;">類型</th>
+          <th style="text-align:right;padding:6px;border-bottom:1px solid #e0d6c0;">Android</th>
+          <th style="text-align:right;padding:6px;border-bottom:1px solid #e0d6c0;">iOS</th>
+        </tr>
+      </thead>
+      ${rowsHtml}
+    </table>
+  `;
 }
 
 function renderAfSheetResult(data, label, rangeLabel) {
