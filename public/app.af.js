@@ -71,7 +71,7 @@
     if (fallback === 'android') {
       return 'Android';
     }
-    if (fallback === 'ios') {
+    if (fallback === 'ios') {日期 -安裝/再歸因/再互動-安卓-ios
       return 'iOS';
     }
     return 'N/A';

@@ -1589,7 +1589,7 @@ function renderCopySheetView() {
           <td colspan="4" style="${S.totData}">${fmtVal(grandTotalSpend)}</td>
         </tr>
         <tr>
-          <td style="${S.totLbl}">純媒體導入(不含自然量)</td>
+          <td style="${S.totLbl}">純媒體導入</td>
           <td colspan="4" style="${S.totData}">${hasAfCounts ? nf.format((afTotalCounts.andNonOrganic || 0) + (afTotalCounts.iosNonOrganic || 0)) : '-'}</td>
         </tr>
         <tr>
