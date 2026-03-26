@@ -146,6 +146,15 @@
 
       <div id="integratedPanel" class="tab-panel" hidden>
         <div class="hint">整合頁不直接查詢，會整合你在 Meta 與 Google 分頁最近一次查到的資料。</div>
+        <div class="filters" style="margin-bottom:0.75rem;">
+          <div>
+            <label for="integratedManualGame">納入手動紀錄（遊戲／專案）</label>
+            <select id="integratedManualGame">
+              <option value="">不納入</option>
+            </select>
+          </div>
+        </div>
+        <div id="integratedManualRangeHint" class="hint" style="margin-bottom:0.75rem;">手動資料套用區間：-</div>
 
         <div id="integratedSummary" class="summary">
           <div class="card">
@@ -274,6 +283,13 @@
 
       <div id="copySheetPanel" class="tab-panel" hidden>
         <div class="hint">依最近一次 Meta / Google 查詢自動整理，按「複製」後可直接貼到 Excel。</div>
+        <div style="margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+          <label for="copySheetManualGame">納入手動紀錄（遊戲／專案）</label>
+          <select id="copySheetManualGame" style="min-width:140px;">
+            <option value="">不納入</option>
+          </select>
+        </div>
+        <div id="copySheetManualRangeHint" class="hint" style="margin-bottom:0.75rem;">手動資料套用區間：-</div>
         <div id="copySheetStatus" class="status"></div>
         <div class="copy-sheet-controls">
           <div>
@@ -303,6 +319,14 @@
           <div>
             <label for="manualName">廣告組名稱</label>
             <input id="manualName" type="text" placeholder="例：ASA-搜尋廣告" />
+          </div>
+          <div>
+            <label for="manualGameName">遊戲／專案</label>
+            <input id="manualGameName" list="manualGameList" type="text" placeholder="可選或自行輸入" />
+            <datalist id="manualGameList"></datalist>
+            <div style="margin-top:6px;">
+              <label style="font-weight:600; font-size:0.9rem;"><input id="manualAddAsProject" type="checkbox" style="margin-left:6px; margin-right:6px;"> 將此遊戲/專案加入專案清單</label>
+            </div>
           </div>
           <div>
             <label for="manualPlatform">平台</label>
@@ -370,6 +394,7 @@
           <table>
             <thead>
               <tr>
+                <th>遊戲／專案</th>
                 <th>廣告組名稱</th>
                 <th>平台</th>
                 <th>日期區間</th>

@@ -61,7 +61,12 @@ const copySheetPanelEl = document.getElementById('copySheetPanel');
 const tabManualEl = document.getElementById('tabManual');
 const manualPanelEl = document.getElementById('manualPanel');
 const manualNameEl = document.getElementById('manualName');
+const manualGameNameEl = document.getElementById('manualGameName');
+const manualGameListEl = document.getElementById('manualGameList');
+const manualAddAsProjectEl = document.getElementById('manualAddAsProject');
 const manualPlatformEl = document.getElementById('manualPlatform');
+const integratedManualGameEl = document.getElementById('integratedManualGame');
+const copySheetManualGameEl = document.getElementById('copySheetManualGame');
 const manualStartDateEl = document.getElementById('manualStartDate');
 const manualEndDateEl = document.getElementById('manualEndDate');
 const manualSpendEl = document.getElementById('manualSpend');
@@ -98,6 +103,8 @@ const integratedIosSpendEl = document.getElementById('integratedIosSpend');
 const integratedWebBookingSpendEl = document.getElementById('integratedWebBookingSpend');
 const integratedUnknownSpendEl = document.getElementById('integratedUnknownSpend');
 const integratedTotalSpendEl = document.getElementById('integratedTotalSpend');
+const integratedManualRangeHintEl = document.getElementById('integratedManualRangeHint');
+const copySheetManualRangeHintEl = document.getElementById('copySheetManualRangeHint');
 
 const nf = new Intl.NumberFormat('zh-TW');
 const twdFormatter = new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 });
@@ -110,6 +117,31 @@ async function loadManualEntries() {
     const res = await fetch('/api/manual-entries');
     manualEntries = await res.json();
   } catch(e) { manualEntries = []; }
+  populateManualGameDropdowns();
+}
+function populateManualGameDropdowns() {
+  const gameNames = [];
+  // collect from existing entries
+  manualEntries.forEach(e => { if (e.gameName && !gameNames.includes(e.gameName)) gameNames.push(e.gameName); });
+  // also add from settings.accounts
+  (settings && settings.accounts || []).forEach(a => { const n = a.name || a.pageName || ''; if (n && !gameNames.includes(n)) gameNames.push(n); });
+  gameNames.sort();
+  // entry form datalist (allows typing or choosing)
+  if (manualGameListEl) {
+    manualGameListEl.innerHTML = gameNames.map(g => `<option value="${escapeHtml(g)}"></option>`).join('');
+  }
+  // integrated panel selector
+  if (integratedManualGameEl) {
+    const cur = integratedManualGameEl.value;
+    integratedManualGameEl.innerHTML = '<option value="">不納入</option>' +
+      gameNames.map(g => `<option value="${escapeHtml(g)}"${g === cur ? ' selected' : ''}>${escapeHtml(g)}</option>`).join('');
+  }
+  // copySheet panel selector
+  if (copySheetManualGameEl) {
+    const cur = copySheetManualGameEl.value;
+    copySheetManualGameEl.innerHTML = '<option value="">不納入</option>' +
+      gameNames.map(g => `<option value="${escapeHtml(g)}"${g === cur ? ' selected' : ''}>${escapeHtml(g)}</option>`).join('');
+  }
 }
 async function saveManualEntry(entry) {
   await fetch('/api/manual-entries', {
@@ -129,9 +161,12 @@ function calcManualSpendTwd(entry) {
   const base = entry.spendCurrency === 'USD' ? entry.spendAmount * fx : entry.spendAmount;
   return base * (entry.serviceFeeRate || 1);
 }
-function getManualEntriesInRange(startDate, endDate) {
+function getManualEntriesInRange(startDate, endDate, gameName) {
   if (!startDate || !endDate) return [];
-  return manualEntries.filter(e => e.startDate <= endDate && e.endDate >= startDate);
+  return manualEntries.filter(e =>
+    e.startDate <= endDate && e.endDate >= startDate &&
+    (!gameName || e.gameName === gameName)
+  );
 }
 function updateManualCpiDisplay() {
   const spend = parseFloat(manualSpendEl.value) || 0;
@@ -157,6 +192,7 @@ function renderManualTable(entries) {
     const cpi = e.afDownloads > 0 ? Math.round(spendTwd / e.afDownloads) : null;
     const platformLabel = e.platform === 'ios' ? 'iOS' : e.platform === 'android' ? 'Android' : '兩者';
     return `<tr>
+      <td>${escapeHtml(e.gameName || '-')}</td>
       <td>${escapeHtml(e.name)}</td>
       <td>${platformLabel}</td>
       <td>${e.startDate} ~ ${e.endDate}</td>
@@ -173,6 +209,7 @@ function deleteManualEntry(id) {
   if (!confirm('確定要刪除這筆紀錄？')) return;
   deleteManualEntryFromServer(id).then(() => {
     renderManualTable(manualEntries);
+    try { populateManualGameDropdowns(); } catch (e) { /* ignore */ }
     manualStatusEl.textContent = '已刪除。';
   });
 }
@@ -731,8 +768,19 @@ function renderIntegratedView() {
     integratedTotalSpendEl.textContent = '-';
     integratedMatrixWrapEl.hidden = true;
     integratedTableWrapEl.hidden = true;
+    if (integratedManualRangeHintEl) integratedManualRangeHintEl.textContent = '手動資料套用區間：-';
     setIntegratedStatus('請先到 Meta 與 Google 分頁各自查詢資料。');
     return;
+  }
+
+  const integratedDateValues = combinedRows
+    .map((row) => row.date)
+    .filter((text) => /^\d{4}-\d{2}-\d{2}$/.test(String(text || '')))
+    .sort();
+  const integratedFirstDate = integratedDateValues[0] || '-';
+  const integratedLastDate = integratedDateValues[integratedDateValues.length - 1] || '-';
+  if (integratedManualRangeHintEl) {
+    integratedManualRangeHintEl.textContent = integratedFirstDate === '-' ? '手動資料套用區間：-' : `手動資料套用區間：${integratedFirstDate} ~ ${integratedLastDate}（依最近一次 Meta / Google 查詢）`;
   }
 
   const sumSpendBy = (predicate) => {
@@ -896,6 +944,27 @@ function renderIntegratedView() {
     `;
   }).join('');
 
+  // incorporate manual entries into summary cards if a game is selected
+  const selectedManualGame = integratedManualGameEl ? integratedManualGameEl.value : '';
+  if (selectedManualGame) {
+    const dateValues2 = combinedRows.map(r => r.date).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))).sort();
+    if (dateValues2.length) {
+      const firstDate2 = dateValues2[0];
+      const lastDate2 = dateValues2[dateValues2.length - 1];
+      const manualInR = getManualEntriesInRange(firstDate2, lastDate2, selectedManualGame);
+      const mAndSpend = manualInR.filter(e => e.platform === 'android' || e.platform === 'both').reduce((s, e) => s + calcManualSpendTwd(e), 0);
+      const mIosSpend = manualInR.filter(e => e.platform === 'ios' || e.platform === 'both').reduce((s, e) => s + calcManualSpendTwd(e), 0);
+      if (mAndSpend || mIosSpend) {
+        const curAnd = toTwd(sumSpendBy(row => row.os === 'Android'));
+        const curIos = toTwd(sumSpendBy(row => row.os === 'iOS'));
+        const curTotal = toTwd(sumSpendBy(() => true));
+        integratedAndroidSpendEl.textContent = twdFormatter.format(curAnd + mAndSpend);
+        integratedIosSpendEl.textContent = twdFormatter.format(curIos + mIosSpend);
+        integratedTotalSpendEl.textContent = twdFormatter.format(curTotal + mAndSpend + mIosSpend);
+      }
+    }
+  }
+
   integratedMatrixWrapEl.hidden = false;
   integratedTableWrapEl.hidden = false;
   setIntegratedStatus('整合頁已依分類先完成 Meta / Google 對照，再提供來源明細。');
@@ -962,7 +1031,8 @@ function buildIntegratedSheetMetrics(combinedRows) {
   const webSpend = fbWeb.spendTwd + gaWeb.spendTwd;
 
   // manual entries
-  const manualInRange = getManualEntriesInRange(firstDate, lastDate);
+  const manualGameName = (typeof integratedManualGameEl !== 'undefined' && integratedManualGameEl) ? integratedManualGameEl.value : '';
+  const manualInRange = manualGameName ? getManualEntriesInRange(firstDate, lastDate, manualGameName) : [];
   const manualAndSpend = manualInRange.filter(e => e.platform === 'android' || e.platform === 'both').reduce((s, e) => s + calcManualSpendTwd(e), 0);
   const manualIosSpend = manualInRange.filter(e => e.platform === 'ios' || e.platform === 'both').reduce((s, e) => s + calcManualSpendTwd(e), 0);
   const manualAndDownloads = manualInRange.filter(e => e.platform === 'android' || e.platform === 'both').reduce((s, e) => s + (e.afDownloads || 0), 0);
@@ -1575,7 +1645,12 @@ function renderCopySheetView() {
   if (!metrics) {
     copySheetStatusEl.textContent = '請先到 Meta 與 Google 分頁各自查詢資料。';
     copySheetTableWrapEl.innerHTML = '';
+    if (copySheetManualRangeHintEl) copySheetManualRangeHintEl.textContent = '手動資料套用區間：-';
     return;
+  }
+
+  if (copySheetManualRangeHintEl) {
+    copySheetManualRangeHintEl.textContent = metrics.rangeText && metrics.rangeText !== '-' ? `手動資料套用區間：${metrics.rangeText}（依最近一次 Meta / Google 查詢）` : '手動資料套用區間：-';
   }
 
   if (!afMappedMetrics) {
@@ -1615,19 +1690,30 @@ function renderCopySheetView() {
   const andTotalInstalls = hasAfCounts ? (fbAndRes + gaAndRes) : null;
   const iosTotalInstalls = hasAfCounts ? (fbIosRes + gaIosRes) : null;
 
-  // manual entries
-  const hasManual = metrics.manualInRange && metrics.manualInRange.length > 0;
-  const manualAndSpend = metrics.manualAndSpend || 0;
-  const manualIosSpend = metrics.manualIosSpend || 0;
-  const manualAndRes = metrics.manualAndDownloads || 0;
-  const manualIosRes = metrics.manualIosDownloads || 0;
+  // --- manual entries: always derived purely from copySheet selector, independent of integrated tab ---
+  const csg = copySheetManualGameEl ? copySheetManualGameEl.value.trim() : '';
+  let csManualInRange = [];
+  if (csg) {
+    const csFirst = metrics.rangeText.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+    const csLast  = metrics.rangeText.match(/(\d{4}-\d{2}-\d{2})$/)?.[1];
+    if (csFirst && csLast) csManualInRange = getManualEntriesInRange(csFirst, csLast, csg);
+  }
+  const manualAndSpend = csManualInRange.filter(e => e.platform === 'android' || e.platform === 'both').reduce((s, e) => s + calcManualSpendTwd(e), 0);
+  const manualIosSpend = csManualInRange.filter(e => e.platform === 'ios'     || e.platform === 'both').reduce((s, e) => s + calcManualSpendTwd(e), 0);
+  const manualAndRes   = csManualInRange.filter(e => e.platform === 'android' || e.platform === 'both').reduce((s, e) => s + (e.afDownloads || 0), 0);
+  const manualIosRes   = csManualInRange.filter(e => e.platform === 'ios'     || e.platform === 'both').reduce((s, e) => s + (e.afDownloads || 0), 0);
 
-  const andSpendTotal = metrics.andSpend - manualAndSpend; // FB+GA only for platform row
-  const iosSpendTotal = metrics.iosSpend - manualIosSpend;
-  const andPlatformCpa = safeCpa(andSpendTotal, andTotalInstalls);
-  const iosPlatformCpa = safeCpa(iosSpendTotal, iosTotalInstalls);
+  // metrics.andSpend = FB+GA only (never contains manual) → platform cost uses it directly
+  const andPlatformCpa = safeCpa(metrics.andSpend, andTotalInstalls);
+  const iosPlatformCpa = safeCpa(metrics.iosSpend, iosTotalInstalls);
 
-  const grandTotalSpend = metrics.andSpend + metrics.iosSpend + offAnd + offIosNum;
+  // displayed device spends = FB+GA + manual (0 when nothing selected)
+  const displayedAndSpend = metrics.andSpend + manualAndSpend;
+  const displayedIosSpend = metrics.iosSpend + manualIosSpend;
+
+  // grand total: base spend must exclude any integrated-tab manual selection entirely
+  const baseSpend = (metrics.andSpend || 0) + (metrics.iosSpend || 0) + (metrics.webSpend || 0) + (metrics.excludedSpend || 0);
+  const grandTotalSpend = baseSpend + manualAndSpend + manualIosSpend + offAnd + offIosNum;
   const grandTotalResults = (andTotalInstalls ?? 0) + (iosTotalInstalls ?? 0) + manualAndRes + manualIosRes;
   const grandTotalCpa = grandTotalResults > 0 ? grandTotalSpend / grandTotalResults : null;
 
@@ -1684,8 +1770,8 @@ function renderCopySheetView() {
         </tr>
         <tr>
           <td style="${S.lbl}">花費</td>
-          <td colspan="2" style="${S.data}">${fmtVal(metrics.andSpend)}</td>
-          <td colspan="2" style="${S.data}">${fmtVal(metrics.iosSpend)}</td>
+          <td colspan="2" style="${S.data}">${fmtVal(displayedAndSpend)}</td>
+          <td colspan="2" style="${S.data}">${fmtVal(displayedIosSpend)}</td>
         </tr>
         <tr>
           <td style="${S.lbl}">總人數</td>
@@ -1702,16 +1788,7 @@ function renderCopySheetView() {
           <td colspan="2" style="${S.data}">${fmtVal(offAnd)}</td>
           <td colspan="2" style="${S.data}">${offIos !== null ? fmtVal(offIos) : ''}</td>
         </tr>
-        ${hasManual ? `<tr>
-          <td style="${S.lbl}">手動(其他) AND</td>
-          <td colspan="2" style="${S.data}">${fmtVal(manualAndSpend)}${manualAndRes > 0 ? ` / ${nf.format(manualAndRes)}人` : ''}</td>
-          <td colspan="2" style="${S.totEmp}"></td>
-        </tr>
-        <tr>
-          <td style="${S.lbl}">手動(其他) iOS</td>
-          <td colspan="2" style="${S.totEmp}"></td>
-          <td colspan="2" style="${S.data}">${fmtVal(manualIosSpend)}${manualIosRes > 0 ? ` / ${nf.format(manualIosRes)}人` : ''}</td>
-        </tr>` : ''}
+        
         <tr>
           <td style="${S.totLbl}">總花費</td>
           <td colspan="4" style="${S.totData}">${fmtVal(grandTotalSpend)}</td>
@@ -1759,7 +1836,7 @@ function setActiveTab(tab) {
   }
 
   if (tab === 'integrated') {
-    renderIntegratedView();
+    loadManualEntries().then(() => renderIntegratedView());
     return;
   }
 
@@ -1894,6 +1971,7 @@ manualSaveBtnEl.addEventListener('click', async () => {
   const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2),
     name,
+    gameName: manualGameNameEl.value.trim(),
     platform: manualPlatformEl.value,
     startDate: start,
     endDate: end,
@@ -1907,6 +1985,18 @@ manualSaveBtnEl.addEventListener('click', async () => {
     manualSaveBtnEl.disabled = true;
     await saveManualEntry(entry);
     renderManualTable(manualEntries);
+    // 若勾選「存為專案」，則把此名稱加入 settings.accounts（若尚未存在）
+    try {
+      const gameToAdd = (manualGameNameEl && manualGameNameEl.value && manualGameNameEl.value.trim()) || '';
+      if (manualAddAsProjectEl && manualAddAsProjectEl.checked && gameToAdd) {
+        const exists = (settings && settings.accounts || []).some(a => (a.name || a.pageName || '') === gameToAdd);
+        if (!exists) {
+          (settings.accounts = settings.accounts || []).push({ name: gameToAdd, accountId: '', platform: getCurrentPlatform() });
+          try { saveSettings(); } catch (_) {}
+        }
+      }
+    } catch (e) { /* ignore */ }
+    try { populateManualGameDropdowns(); } catch (e) { /* ignore */ }
     manualStatusEl.textContent = `已儲存「${name}」。共 ${manualEntries.length} 筆紀錄。`;
   } catch(err) {
     manualStatusEl.textContent = `儲存失敗：${err.message}`;
@@ -1952,6 +2042,8 @@ copySheetCopyBtnEl.addEventListener('click', async () => {
 copySheetOfflineAndEl.addEventListener('input', renderCopySheetView);
 copySheetOfflineIosEl.addEventListener('input', renderCopySheetView);
 copySheetDateLabelEl.addEventListener('input', renderCopySheetView);
+copySheetManualGameEl.addEventListener('change', renderCopySheetView);
+integratedManualGameEl.addEventListener('change', renderIntegratedView);
 if (integratedSheetSaveBtnEl) {
   integratedSheetSaveBtnEl.addEventListener('click', saveIntegratedSheetSnapshot);
 }
