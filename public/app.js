@@ -1120,6 +1120,7 @@ function renderIntegratedSheetView() {
 }
 
 async function loadAfSheetList() {
+  if (afDbGameSelectEl.options.length > 1) return;
   afDbListStatusEl.textContent = '載入中…';
   afDbReloadBtnEl.disabled = true;
   try {
@@ -1296,35 +1297,33 @@ function renderAfDailyTable(dailyResults, label) {
   }
 
   // Build rows with clearer structure similar to above tables
-  const rowsHtml = dailyResults.map((d) => {
-    return `
-      <tbody class="daily-block">
-        <tr class="date-row" style="background:#f7f2e6;font-weight:700;"><td style="padding:8px;border-top:1px solid #e0d6c0;">${d.date}</td><td style="padding:8px;border-top:1px solid #e0d6c0;text-align:right;">${d.total}</td><td style="padding:8px;border-top:1px solid #e0d6c0;">總覽</td><td style="padding:8px;border-top:1px solid #e0d6c0;text-align:right;">${d.android}</td><td style="padding:8px;border-top:1px solid #e0d6c0;text-align:right;">${d.ios}</td></tr>
-        <tr><td style="padding:6px;">&nbsp;</td><td style="padding:6px;text-align:right;">${d.installs}</td><td style="padding:6px;">安裝</td><td style="padding:6px;text-align:right;">${d.installsAnd || ''}</td><td style="padding:6px;text-align:right;">${d.installsIos || ''}</td></tr>
-        <tr><td style="padding:6px;">&nbsp;</td><td style="padding:6px;text-align:right;">${d.reattribution}</td><td style="padding:6px;">再歸因</td><td style="padding:6px;text-align:right;">${d.reattrAnd || ''}</td><td style="padding:6px;text-align:right;">${d.reattrIos || ''}</td></tr>
-        <tr><td style="padding:6px;">&nbsp;</td><td style="padding:6px;text-align:right;">${d.reengagement}</td><td style="padding:6px;">再互動</td><td style="padding:6px;text-align:right;">${d.reengAnd || ''}</td><td style="padding:6px;text-align:right;">${d.reengIos || ''}</td></tr>
-      </tbody>
-    `;
-  }).join('');
+  const rowsHtml = dailyResults.map((d) => `<tbody class="daily-block">
+        <tr class="date-row" style="background:#f0e8cc;font-weight:700;border-bottom:1px solid #e0d6c0;"><td style="padding:10px;color:#2d2200;">${d.date}</td><td style="padding:10px;text-align:right;color:#2d2200;">${d.total}</td><td style="padding:10px;color:#2d2200;">總覽</td><td style="padding:10px;text-align:right;color:#2d2200;">${d.android}</td><td style="padding:10px;text-align:right;color:#2d2200;">${d.ios}</td></tr>
+        <tr style="border-bottom:1px solid #ede8d8;"><td style="padding:8px;background:#fffef4;">&nbsp;</td><td style="padding:8px;background:#fffef4;text-align:right;">${d.installs}</td><td style="padding:8px;background:#fffef4;">安裝</td><td style="padding:8px;background:#fffef4;text-align:right;">${d.installsAnd || ''}</td><td style="padding:8px;background:#fffef4;text-align:right;">${d.installsIos || ''}</td></tr>
+        <tr style="border-bottom:1px solid #ede8d8;"><td style="padding:8px;background:#fffef4;">&nbsp;</td><td style="padding:8px;background:#fffef4;text-align:right;">${d.reattribution}</td><td style="padding:8px;background:#fffef4;">再歸因</td><td style="padding:8px;background:#fffef4;text-align:right;">${d.reattrAnd || ''}</td><td style="padding:8px;background:#fffef4;text-align:right;">${d.reattrIos || ''}</td></tr>
+        <tr><td style="padding:8px;background:#fffef4;">&nbsp;</td><td style="padding:8px;background:#fffef4;text-align:right;">${d.reengagement}</td><td style="padding:8px;background:#fffef4;">再互動</td><td style="padding:8px;background:#fffef4;text-align:right;">${d.reengAnd || ''}</td><td style="padding:8px;background:#fffef4;text-align:right;">${d.reengIos || ''}</td></tr>
+      </tbody>`).join('');
 
   section.innerHTML = `
     ${heading}
-    <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;">
+    <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
       <button id="afDailyCopyBtn" class="btn">複製日期明細</button>
       <span id="afDailyCopyStatus" style="color:#666;font-size:0.9rem;"></span>
     </div>
-    <table id="afDailyTable" style="width:100%;border-collapse:collapse;font-size:0.95rem;border:1px solid #eee;">
-      <thead>
-        <tr>
-          <th style="text-align:left;padding:8px;border-bottom:1px solid #e0d6c0;">日期</th>
-          <th style="text-align:right;padding:8px;border-bottom:1px solid #e0d6c0;">總計</th>
-          <th style="text-align:left;padding:8px;border-bottom:1px solid #e0d6c0;">類型</th>
-          <th style="text-align:right;padding:8px;border-bottom:1px solid #e0d6c0;">Android</th>
-          <th style="text-align:right;padding:8px;border-bottom:1px solid #e0d6c0;">iOS</th>
-        </tr>
-      </thead>
-      ${rowsHtml}
-    </table>
+    <div style="background:#faf5ed;border:1px solid #e0d6c0;border-radius:4px;overflow:hidden;">
+      <table id="afDailyTable" style="width:100%;border-collapse:collapse;font-size:0.95rem;">
+        <thead>
+          <tr style="background:#f0e8cc;border-bottom:1px solid #e0d6c0;">
+            <th style="text-align:left;padding:10px;font-weight:700;color:#2d2200;">日期</th>
+            <th style="text-align:right;padding:10px;font-weight:700;color:#2d2200;">總計</th>
+            <th style="text-align:left;padding:10px;font-weight:700;color:#2d2200;">類型</th>
+            <th style="text-align:right;padding:10px;font-weight:700;color:#2d2200;">Android</th>
+            <th style="text-align:right;padding:10px;font-weight:700;color:#2d2200;">iOS</th>
+          </tr>
+        </thead>
+        ${rowsHtml}
+      </table>
+    </div>
   `;
 
   // wire copy button
@@ -1635,9 +1634,6 @@ function setActiveTab(tab) {
         if (match) { afDbSinceEl.value = match[1]; afDbUntilEl.value = match[2]; }
       }
     }
-    if (afDbGameSelectEl.options.length <= 1) {
-      loadAfSheetList();
-    }
     return;
   }
 
@@ -1751,6 +1747,7 @@ if (integratedSheetSaveBtnEl) {
   integratedSheetSaveBtnEl.addEventListener('click', saveIntegratedSheetSnapshot);
 }
 afDbReloadBtnEl.addEventListener('click', loadAfSheetList);
+tabIntegrated2El.addEventListener('click', loadAfSheetList);
 afDbFetchBtnEl.addEventListener('click', fetchAfSheetData);
 if (integratedSheetNotesEl) {
   integratedSheetNotesEl.addEventListener('click', (event) => {
